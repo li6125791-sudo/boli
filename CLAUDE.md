@@ -14,14 +14,16 @@
 3. 做成网站（GitHub Pages）。
 4. 做成真正的软件：后台要**密码登录**；客户能**在线预约换汇**（写多少钱、怎么换）；以后**方便更新**；每次修改**自动保存**；全程自动化。
 5. 问过能否用 iPad 当数据库 → 解释了不行（订单需要 24 小时在线的服务器），保留 Supabase。
+6. 只要**一个网址**：客户页右上角显示「内部管理登录」，点进去填账号密码进后台，客户进不去。
+7. 页面重新设计：**不要绿色**，好看、新奇、好玩。
 
 ## 架构
 | 文件 | 作用 |
 |---|---|
-| `index.html` | 客户网站（`BOLI_MODE="public"`）：已发布汇率、在线预约表单（实时报价）、订单号查进度，中 / 俄 |
-| `admin.html` | 后台（`BOLI_MODE="admin"`）：邮箱+密码登录；概览 / 订单 / 流水 / 客户 / 汇率 |
-| `app.js` | 两个页面共用的全部程序（按 `/* ---------- 章节 ---------- */` 分段） |
-| `app.css` | 样式；颜色全用 `:root` 变量，深色模式另有一套 |
+| `index.html` | **唯一的网址**。访客看到客户页（已发布汇率、在线预约、查订单，中 / 俄）；右上角「内部管理登录」→ 邮箱+密码 → 同一页面变成后台（概览 / 订单 / 流水 / 客户 / 汇率）。已登录的设备打开直接进后台 |
+| `admin.html` | 只是跳转到 `./`（旧链接兼容） |
+| `app.js` | 全部程序（按 `/* ---------- 章节 ---------- */` 分段）；`S.role` = `client` / `owner` |
+| `app.css` | 「草原天空」设计：哈萨克国旗的天蓝 + 金色太阳、汇率翻牌数字、粗描边错位阴影按钮。**用户不要绿色**：进账用蓝色、出账用珊瑚红。颜色全用 `:root` 变量，深色模式另有一套 |
 | `config.js` | 唯一配置：Supabase URL + anon key + 公司名 |
 | `supabase/setup.sql` | 建表、RLS 权限、`place_order` / `order_status` / `claim_admin` 函数、实时同步；**可重复运行** |
 | `SETUP.md` | 给用户的上线步骤 |
@@ -38,14 +40,13 @@
 - 订单「完成并记账」= 生成一笔 fx：`currency`=客户要的币种（我们付出），`toCurrency`=客户付的币种（我们收进）。
 
 ## 网址
-- 客户网站：https://li6125791-sudo.github.io/boli/
-- 后台：https://li6125791-sudo.github.io/boli/admin.html
+- 网站（客户和后台同一个网址）：https://li6125791-sudo.github.io/boli/ ，后台从右上角「内部管理登录」进入
 - Supabase 控制台：https://supabase.com/dashboard/project/ehltorpszvtuupqwzocg
 
 ## 当前状态（2026-11-26）
-- 代码在分支 `claude/accounting-system-design-b57g1h`；`main` 只有 README。建议合并到 `main` 并把 Pages 改成 `main`（已向用户提议，待确认）。
+- GitHub Pages 从 `main` 分支 `/ (root)` 发布；PR #1 已合并。改动走新分支 + PR，用户在 GitHub 点 Merge。
 - 已完成：Supabase 项目创建、`setup.sql` 运行成功、后台账号已创建、`config.js` 已填 URL 和 anon key。
-- 进行中：GitHub Pages 开启（选分支 → Save）；关闭 Supabase「Allow new users to sign up」；第一次登录后台、发布汇率。
+- 待用户确认：已关闭 Supabase「Allow new users to sign up」；第一次登录后台、发布汇率。
 - 尚未在真实 Supabase 上端到端测试过（云端开发环境连不上 supabase.co）。
 
 ## 修改时的约定

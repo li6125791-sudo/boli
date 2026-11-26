@@ -1,10 +1,10 @@
-/* Boli 账本 — one script for both pages.
-   index.html sets BOLI_MODE="public"  → client rate board + online order form
-   admin.html sets BOLI_MODE="admin"   → password login, ledger, orders, rates
+/* Boli 账本 — one page, one address.
+   Visitors see the client rate board + online exchange order form.
+   The top-right "内部管理登录" button opens an email+password login; the owner then gets the
+   back office (dashboard, orders, ledger, clients, rates) on the same page.
    All data lives in Supabase (see supabase/setup.sql); every change is saved immediately. */
 (function(){
 "use strict";
-const MODE=window.BOLI_MODE||"public";
 const CFG=window.BOLI_CONFIG||{};
 const CURS=["CNY","USD","KZT"];
 const SYM={CNY:"¥",USD:"$",KZT:"₸"};
@@ -18,7 +18,7 @@ const ORDER_ST={new:"待确认",confirmed:"已确认",done:"已完成",cancelled
 let PUB=JSON.parse(JSON.stringify(DEFAULT_PUB));
 const S={role:"loading",txns:new Map(),clients:new Map(),orders:new Map(),settings:{...DEFAULT_SETTINGS,rates:{...DEFAULT_SETTINGS.rates}},
   view:"dash",disp:"CNY",period:"month",from:"",to:"",lf:{q:"",type:"",cur:"",client:"",cat:"",status:""},of:"open",
-  preview:false,lang:"zh",draft:null,email:"",save:{pending:0,last:0,error:false},loaded:false};
+  preview:false,lang:"zh",draft:null,email:"",save:{pending:0,last:0,error:false},loaded:false,showLogin:false,loginErr:""};
 let sb=null;
 
 /* ---------- utils ---------- */
@@ -53,6 +53,7 @@ const ICON={
   eye:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   out:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  key:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>',
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   orders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12l2 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/><path d="M4 6h16M9 11h6M9 15h4"/></svg>',
   ledger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
@@ -60,6 +61,11 @@ const ICON={
   rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h14l-4-4M20 16H6l4 4"/></svg>'
 };
 const VIEWS=[["dash","概览"],["orders","订单"],["ledger","流水"],["clients","客户"],["rates","汇率"]];
+// the golden sun from the Kazakh flag, drawn once and reused in the hero bands
+const SUN=(()=>{let r="";for(let i=0;i<32;i++){const a=i*Math.PI/16,x1=50+Math.cos(a)*30,y1=50+Math.sin(a)*30,x2=50+Math.cos(a)*(i%2?44:48),y2=50+Math.sin(a)*(i%2?44:48);r+=`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`}
+  return `<svg class="sun" viewBox="0 0 100 100" aria-hidden="true"><g class="rays" stroke="currentColor" stroke-width="3" stroke-linecap="round">${r}</g><circle cx="50" cy="50" r="24" fill="currentColor"/></svg>`})();
+// split-flap departure-board digits for the rate tiles
+function flaps(txt){return [...String(txt)].map((ch,i)=>`<span class="flap${/[0-9]/.test(ch)?"":" sep"}" style="--i:${i}">${esc(ch)}</span>`).join("")}
 
 /* ---------- money math: a transaction's rates are "units per 1 USD" ---------- */
 function rateOf(rates,c){return c==="USD"?1:num(rates&&rates[c])||num(S.settings.rates[c])||1}
@@ -141,7 +147,7 @@ function subscribe(){
 }
 async function refreshOrders(){try{const o=await q(sb.from("orders").select("*").order("created_at",{ascending:false}).limit(1000));
   const before=S.orders.size;S.orders=new Map(o.map(r=>[r.id,r]));if(S.orders.size>before){ping();toast("有新订单")}render()}catch(e){}}
-function ping(){const n=[...S.orders.values()].filter(o=>o.status==="new").length;document.title=(n?`(${n}) `:"")+"Boli 账本"}
+function ping(){const n=[...S.orders.values()].filter(o=>o.status==="new").length;document.title=(n?`(${n}) `:"")+"Boli 后台"}
 
 /* ---------- boot ---------- */
 async function boot(){
@@ -149,18 +155,20 @@ async function boot(){
   try{const o=JSON.parse(lsGet("boli-prefs")||"{}");if(CURS.includes(o.disp))S.disp=o.disp;if(o.period)S.period=o.period;if(o.view&&VIEWS.some(v=>v[0]===o.view))S.view=o.view;if(o.lang)S.lang=o.lang}catch(e){}
   if(!hadPrefs&&/^(ru|kk|ky|uz|be|uk)/i.test(navigator.language||""))S.lang="ru";
   const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))S.view=h;
-  if(!configured()){S.role=MODE==="admin"?"setup":"client";render();return}
+  if(!configured()){S.role="client";render();return}
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true}});
-  if(MODE==="public"){S.role="client";render();try{const d=await q(sb.from("settings").select("value").eq("key","public").maybeSingle());if(d&&d.value)PUB={...DEFAULT_PUB,...d.value}}catch(e){}render();refreshMyOrders();return}
-  sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_OUT"&&S.role==="owner"){S.role="login";render()}});
+  sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_OUT"&&S.role==="owner")toClient()});
   let session=null;try{session=(await sb.auth.getSession()).data.session}catch(e){}
-  if(!session){S.role="login";render();return}
-  await enterAdmin(session);
+  if(session){await enterAdmin(session);return}   // the owner's own device goes straight to the back office
+  S.role="client";render();
+  await loadPublic();render();refreshMyOrders();
 }
+async function loadPublic(){try{const d=await q(sb.from("settings").select("value").eq("key","public").maybeSingle());if(d&&d.value)PUB={...DEFAULT_PUB,...d.value}}catch(e){}}
+function toClient(){S.role="client";S.preview=false;S.showLogin=false;shellRole=null;S.txns.clear();S.orders.clear();S.clients.clear();S.loaded=false;document.title="Boli · 汇率与换汇预约";render();window.scrollTo({top:0})}
 async function enterAdmin(session){
   S.email=session&&session.user&&session.user.email||"";
   let ok=false;try{ok=await q(sb.rpc("claim_admin"))}catch(e){console.error(e)}
-  if(!ok){await sb.auth.signOut().catch(()=>{});S.role="login";S.loginErr="这个账号没有后台权限。";render();return}
+  if(!ok){await sb.auth.signOut().catch(()=>{});S.role="client";S.showLogin=true;S.loginErr="这个账号没有后台权限。";await loadPublic();render();return}
   S.role="owner";S.loaded=false;render();
   await syncAll();ping();subscribe();
 }
@@ -202,9 +210,7 @@ let shellRole=null;
 function render(){
   const root=$("#root");
   if(S.role==="loading")return;
-  if(S.role==="setup"){shellRole="setup";root.innerHTML=setupPage();return}
-  if(S.role==="login"){shellRole="login";root.innerHTML=loginPage();bindLogin();return}
-  if(S.role==="client"||S.preview){shellRole="client";root.innerHTML=publicPage(S.preview?previewPub():PUB,S.preview);bindPublic();return}
+  if(S.role==="client"||S.preview){shellRole="client";root.innerHTML=publicPage(S.preview?previewPub():PUB,S.preview)+(S.showLogin&&!S.preview?loginModal():"");bindPublic();if(S.showLogin&&!S.preview)bindLogin();return}
   if(shellRole!=="owner"||!$("#main")){shellRole="owner";root.innerHTML=ownerShell();bindShell();paintSave()}
   else{
     document.querySelectorAll(".tabs button,.bnav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.v===S.view)));
@@ -228,33 +234,30 @@ function render(){
   if(keep){const el=document.getElementById(keep.id);if(el){el.focus();try{el.setSelectionRange(keep.s,keep.e)}catch(e){}}}
 }
 
-/* ---------- setup / login ---------- */
-function setupPage(){
-  return `<section class="pub-hero ornament auth-hero"><div class="wrap"><div class="brand"><span class="mark">B</span><div><b>Boli 账本</b><small>还差一步</small></div></div></div></section>
-  <div class="auth-body"><div class="card" style="display:grid;gap:10px"><h2 style="margin:0">网站还没有连接数据库</h2>
-  <p style="margin:0;color:var(--muted)">按仓库里 <b>SETUP.md</b> 的步骤：创建免费的 Supabase 项目 → 运行 <code>supabase/setup.sql</code> → 把 Project URL 和 anon key 填进 <code>config.js</code>。填好后刷新这个页面。</p></div></div>`;
-}
-function loginPage(){
+/* ---------- login (opens from the top-right button) ---------- */
+function loginModal(){
   const em=lsGet("boli-email")||"";
-  return `<section class="pub-hero ornament auth-hero"><div class="wrap"><div class="brand"><span class="mark">B</span><div><b>Boli 账本</b><small>后台登录</small></div></div></div></section>
-  <div class="auth-body"><form class="card auth-card" id="loginForm" novalidate>
-    <h2 style="margin:0">登录后台</h2>
-    <div class="field"><label for="lg-email">邮箱</label><input id="lg-email" type="email" autocomplete="username" value="${esc(em)}" required></div>
+  return `<div class="scrim" id="lscrim"><form class="sheet auth-card" id="loginForm" novalidate>
+    <div class="auth-top">${SUN}<div><h3 style="margin:0">内部管理登录</h3><p>只有管理员能进入。客户请直接使用本页预约。</p></div><button class="btn ghost" type="button" data-lclose aria-label="关闭">✕</button></div>
+    ${configured()?`<div class="field"><label for="lg-email">邮箱</label><input id="lg-email" type="email" autocomplete="username" value="${esc(em)}" required></div>
     <div class="field"><label for="lg-pass">密码</label><input id="lg-pass" type="password" autocomplete="current-password" required></div>
     <div class="err" id="lg-err" ${S.loginErr?"":"hidden"}>${esc(S.loginErr||"")}</div>
-    <button class="btn primary" type="submit" id="lg-btn" style="width:100%">登录</button>
-    <div style="font-size:12px;color:var(--muted)">账号在 Supabase 控制台 → Authentication → Users 创建。第一个登录的账号会自动成为管理员。</div>
+    <button class="btn primary big" type="submit" id="lg-btn">进入后台 →</button>`
+    :`<div class="banner">网站还没有连接数据库。按仓库里 SETUP.md 的步骤填好 config.js 后再登录。</div>`}
   </form></div>`;
 }
 function bindLogin(){
-  const f=$("#loginForm");if(!f)return;
+  const close=()=>{S.showLogin=false;S.loginErr="";render()};
+  const sc=$("#lscrim");if(!sc)return;
+  sc.addEventListener("click",e=>{if(e.target===sc||e.target.closest("[data-lclose]"))close()});
+  const f=$("#loginForm");if(!f||!$("#lg-email"))return;
   (lsGet("boli-email")?$("#lg-pass"):$("#lg-email")).focus();
   f.onsubmit=async e=>{e.preventDefault();const email=$("#lg-email").value.trim(),password=$("#lg-pass").value,err=$("#lg-err"),btn=$("#lg-btn");
     if(!email||!password){err.textContent="请填写邮箱和密码";err.hidden=false;return}
     btn.disabled=true;btn.textContent="正在登录…";S.loginErr="";
     const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error){btn.disabled=false;btn.textContent="登录";err.textContent=/confirm/i.test(error.message)?"这个邮箱还没确认，请在 Supabase 里把用户设为已确认":"邮箱或密码不对";err.hidden=false;return}
-    lsSet("boli-email",email);await enterAdmin(data.session);
+    if(error){btn.disabled=false;btn.textContent="进入后台 →";err.textContent=/confirm/i.test(error.message)?"这个邮箱还没确认，请在 Supabase 里把用户设为已确认":"邮箱或密码不对";err.hidden=false;return}
+    lsSet("boli-email",email);S.showLogin=false;await enterAdmin(data.session);
   };
 }
 
@@ -267,7 +270,7 @@ function ownerShell(){
       <select id="period" aria-label="统计期间">${[["month","本月"],["lastmonth","上月"],["quarter","近3个月"],["year","今年"],["all","全部"],["custom","自定义…"]].map(([k,l])=>`<option value="${k}"${S.period===k?" selected":""}>${l}</option>`).join("")}</select>
       <span class="ctrls" id="customRange" ${S.period==="custom"?"":"hidden"}><input type="date" id="from" aria-label="开始日期" value="${esc(S.from)}"><input type="date" id="to" aria-label="结束日期" value="${esc(S.to)}"></span>
       <div class="seg" id="dispCur" aria-label="折算币种">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${S.disp===c}" title="按${CNAME[c]}折算">${SYM[c]}</button>`).join("")}</div>
-      <button class="iconbtn" type="button" id="toPreview" title="客户看到的页面">${ICON.eye}<span class="hide-sm">客户视图</span></button>
+      <button class="iconbtn" type="button" id="toPreview" title="客户看到的页面">${ICON.eye}<span class="hide-sm">客户页面</span></button>
       <button class="iconbtn" type="button" id="logout" title="退出登录 ${esc(S.email)}">${ICON.out}<span class="hide-sm">退出</span></button>
     </div>
   </div></header>
@@ -294,7 +297,7 @@ function monthsSeries(D,count){
 function viewDash(){
   const D=S.disp,list=allTx().filter(inPeriod),T=totals(list,D),[,,plabel]=periodRange(),A=totals(allTx(),D);
   const margin=T.inc?T.profit/T.inc*100:0,bal=balances(allTx()),series=monthsSeries(D,12);
-  let h=`<section class="hero ornament">
+  let h=`<section class="hero ornament">${SUN}
     <div><div class="eyebrow">净利润 · ${esc(plabel)} · ${CNAME[D]}</div><div class="big">${fmt(T.profit,D)}</div>
       <div class="sub"><span>利润率 <b>${margin.toFixed(1)}%</b></span>${T.fx?`<span>含换汇利润 <b>${fmt(T.fx,D,{plus:true})}</b></span>`:""}<span>${T.count} 笔记录</span></div>
       ${spark(series)}</div>
@@ -328,7 +331,7 @@ function spark(series){
   const W=300,H=56,vals=series.map(d=>d.profit),mx=Math.max(...vals,0),mn=Math.min(...vals,0),rng=(mx-mn)||1;
   const pts=vals.map((v,i)=>[i/(vals.length-1||1)*(W-8)+4,H-6-(v-mn)/rng*(H-14)]);
   const line=pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "),last=pts[pts.length-1];
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="4,${H} ${line} ${W-4},${H}" fill="rgba(227,191,106,.16)"/><polyline points="${line}" fill="none" stroke="var(--gold-band)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--gold-band)"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="4,${H} ${line} ${W-4},${H}" fill="rgba(255,201,40,.22)"/><polyline points="${line}" fill="none" stroke="var(--sun)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--sun)"/></svg>`;
 }
 function monthChart(data,D){
   const W=640,H=250,pl=58,pr=12,pt=16,pb=30;
@@ -343,9 +346,9 @@ function monthChart(data,D){
     g+=`<text x="${x+bw/2}" y="${H-10}" text-anchor="middle" font-size="10" fill="var(--muted)">${+d.k.slice(5)}月</text>`;
     pts.push([x+bw/2,y_(d.profit),d]);
   });
-  g+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linejoin="round"/>`;
-  pts.forEach((p,i)=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?5:3}" fill="var(--panel)" stroke="var(--gold)" stroke-width="2.2"><title>${p[2].k} 利润 ${fmt(p[2].profit,D)}</title></circle>`});
-  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="月度进出账与利润">${g}</svg></div><div class="legend"><span><i style="background:var(--in)"></i>进账</span><span><i style="background:var(--out)"></i>出账</span><span><i style="background:var(--gold);height:3px;vertical-align:3px"></i>净利润（含换汇）</span></div>`;
+  g+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="var(--sun-deep)" stroke-width="2.4" stroke-linejoin="round"/>`;
+  pts.forEach((p,i)=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?5:3}" fill="var(--panel)" stroke="var(--sun-deep)" stroke-width="2.2"><title>${p[2].k} 利润 ${fmt(p[2].profit,D)}</title></circle>`});
+  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="月度进出账与利润">${g}</svg></div><div class="legend"><span><i style="background:var(--in)"></i>进账</span><span><i style="background:var(--out)"></i>出账</span><span><i style="background:var(--sun-deep);height:3px;vertical-align:3px"></i>净利润（含换汇）</span></div>`;
 }
 function niceCeil(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p}
 
@@ -545,15 +548,16 @@ function previewPub(){const d=getDraft();return {...d,published:true,updated:d.u
 function publicPage(P,preview){
   const T=L[S.lang]||L.zh,ps=(P.pairs||[]).filter(p=>p.on!==false&&num(p.r)>0),ok=P.published&&ps.length;
   return `${preview?`<div class="preview-bar"><div class="wrap"><span>${esc(T.preview)}</span><button class="btn" type="button" id="exitPreview">${esc(T.back)}</button></div></div>`:""}
-  <section class="pub-hero ornament"><div class="wrap">
+  <section class="pub-hero ornament">${SUN}<div class="wrap">
     <div class="pub-head"><div class="brand"><span class="mark">${esc([...(P.company||"B")][0])}</span><div><b>${esc(P.company||"Boli")}</b><small>USD · KZT · CNY</small></div></div>
-      <div class="langs">${[["zh","中文"],["ru","Рус"]].map(([k,l])=>`<button type="button" data-lang="${k}" aria-pressed="${S.lang===k}">${l}</button>`).join("")}</div></div>
+      <div class="ctrls"><div class="langs">${[["zh","中文"],["ru","Рус"]].map(([k,l])=>`<button type="button" data-lang="${k}" aria-pressed="${S.lang===k}">${l}</button>`).join("")}</div>
+      ${preview?"":`<button class="loginbtn" type="button" id="openLogin">${ICON.key}<span>内部管理登录</span></button>`}</div></div>
     <div class="pub-title"><h1>${esc(T.title)}</h1><p>${esc(T.sub)}</p>${ok?`<span class="stamp"><i></i>${esc(T.upd)} ${esc(P.updated)}</span>`:""}</div>
   </div></section>
   <div class="pub-body">
     ${ok?`<div class="board">${ps.map(p=>`<div class="quote">
       <div class="pair"><span class="chip c-${p.b}">${p.b}</span><span class="arrow">→</span><span class="chip c-${p.q}">${p.q}</span><span style="color:var(--muted);font-weight:600;margin-left:auto;font-size:12px">${esc(T.names[p.b])} → ${esc(T.names[p.q])}</span></div>
-      <div class="val">${sig(num(p.r))}<small>${SYM[p.q]}</small></div>
+      <div class="val">${flaps(sig(num(p.r)))}<small>${SYM[p.q]}</small></div>
       <div class="inv">1 ${p.b} = ${sig(num(p.r))} ${p.q} · 1 ${p.q} = ${sig(1/num(p.r))} ${p.b}</div>
       ${hasVal(p.buy)||hasVal(p.sell)?`<div class="bs"><div><small>${esc(T.buy)}</small><b>${hasVal(p.buy)?sig(num(p.buy)):"—"}</b></div><div><small>${esc(T.sell)}</small><b>${hasVal(p.sell)?sig(num(p.sell)):"—"}</b></div></div>`:""}
     </div>`).join("")}</div>
@@ -627,6 +631,7 @@ function bindPublic(){
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{readOF();S.lang=b.dataset.lang;savePrefs();render()});
   const cc=$("#copyContact");if(cc)cc.onclick=()=>copyText((S.preview?getDraft():PUB).contact||"",$("#pc-contact"));
   const ex=$("#exitPreview");if(ex)ex.onclick=()=>{S.preview=false;shellRole=null;render();window.scrollTo({top:0})};
+  const ol=$("#openLogin");if(ol)ol.onclick=()=>{S.showLogin=true;S.loginErr="";render()};
   const f=$("#orderForm");
   if(f){
     f.oninput=()=>{readOF();updateQuote()};f.onchange=()=>{readOF();updateQuote()};
@@ -786,7 +791,7 @@ function bindShell(){
   $("#period").onchange=e=>{S.period=e.target.value;if(S.period==="custom"&&!S.from){S.from=new Date().getFullYear()+"-01-01";S.to=today();$("#from").value=S.from;$("#to").value=S.to}savePrefs();render()};
   $("#from").onchange=e=>{S.from=e.target.value;render()};$("#to").onchange=e=>{S.to=e.target.value;render()};
   $("#toPreview").onclick=()=>{readDraft();S.preview=true;render();window.scrollTo({top:0})};
-  $("#logout").onclick=async()=>{await sb.auth.signOut().catch(()=>{});S.role="login";S.txns.clear();S.orders.clear();S.clients.clear();render()};
+  $("#logout").onclick=async()=>{await sb.auth.signOut().catch(()=>{});toClient();await loadPublic();render()};
 }
 const noteTimers={};
 function bindView(){
@@ -839,7 +844,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("input",e=>{if(F&&e.target.closest("#txForm"))calcTx()});
 document.addEventListener("submit",e=>{if(e.target.id==="txForm"){e.preventDefault();submitTx()}});
-document.addEventListener("keydown",e=>{const m=$("#modal");if(e.key==="Escape"&&m&&m.innerHTML)closeModal()});
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;const m=$("#modal");if(m&&m.innerHTML)closeModal();else if(S.showLogin){S.showLogin=false;S.loginErr="";render()}});
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(S.role==="owner"&&!S.preview&&VIEWS.some(v=>v[0]===h)&&h!==S.view){S.view=h;render()}});
 window.addEventListener("beforeunload",e=>{if(S.save.pending){e.preventDefault();e.returnValue=""}});
 
