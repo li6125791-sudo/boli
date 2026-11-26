@@ -1,0 +1,12 @@
+{
+  "company": "Boli",
+  "contact": "",
+  "notice": "",
+  "updated": "",
+  "published": false,
+  "pairs": [
+    {"b": "USD", "q": "KZT", "r": 505, "buy": "", "sell": "", "on": true},
+    {"b": "USD", "q": "CNY", "r": 7.1, "buy": "", "sell": "", "on": true},
+    {"b": "CNY", "q": "KZT", "r": 71, "buy": "", "sell": "", "on": true}
+  ]
+}
