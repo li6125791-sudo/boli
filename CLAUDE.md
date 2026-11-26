@@ -14,14 +14,19 @@
 3. 做成网站（GitHub Pages）。
 4. 做成真正的软件：后台要**密码登录**；客户能**在线预约换汇**（写多少钱、怎么换）；以后**方便更新**；每次修改**自动保存**；全程自动化。
 5. 问过能否用 iPad 当数据库 → 解释了不行（订单需要 24 小时在线的服务器），保留 Supabase。
+6. 只要**一个网址**：客户页右上角显示「内部管理登录」，点进去填账号密码进后台，客户进不去。
+7. 页面重新设计：**不要绿色**，好看、新奇、好玩。
+8. 嫌上一版 low：要**高级感**、客户一看就被吸引，可以有**可爱的小动态表情**；人民币和坚戈要**双向换汇**（两个方向分别填汇率），不是只有一个汇率。
+9. 设计改成 **3D**，**不要飘来飘去**。
+10. **白色网页更好**（客户页和后台都用白色）；**每单可以有自己的卖出汇率**；记账时「客户/对方」点开能选已有客户或添加新客户；**每位客户的账目和订单都归到他的个人档案**。
 
 ## 架构
 | 文件 | 作用 |
 |---|---|
-| `index.html` | 客户网站（`BOLI_MODE="public"`）：已发布汇率、在线预约表单（实时报价）、订单号查进度，中 / 俄 |
-| `admin.html` | 后台（`BOLI_MODE="admin"`）：邮箱+密码登录；概览 / 订单 / 流水 / 客户 / 汇率 |
-| `app.js` | 两个页面共用的全部程序（按 `/* ---------- 章节 ---------- */` 分段） |
-| `app.css` | 样式；颜色全用 `:root` 变量，深色模式另有一套 |
+| `index.html` | **唯一的网址**。访客看到客户页（已发布汇率、在线预约、查订单，中 / 俄）；右上角「内部管理登录」→ 邮箱+密码 → 同一页面变成后台（概览 / 订单 / 流水 / 客户 / 汇率）。已登录的设备打开直接进后台 |
+| `admin.html` | 只是跳转到 `./`（旧链接兼容） |
+| `app.js` | 全部程序（按 `/* ---------- 章节 ---------- */` 分段）；`S.role` = `client` / `owner` |
+| `app.css` | 白色高级感设计（用户明确说**白色更好**）：客户页（`.pub`）白底 + 淡香槟/淡蓝光晕 + 有厚度的白色卡片 + 香槟金点缀 + 中文衬线立体标题；后台也是白色顶栏；**3D 风格**：两枚有厚度的 3D 硬币宝宝（¥ 和 ₸，`coin3d()` = 正面 SVG + 背面 + 12 层边缘）站在发光展台上，鼠标移动时转角度、点一下原地翻转；卡片 3D 倾斜 + 反光（`.tilt`）；按钮立体可按下；标题和汇率数字是浮雕字。**用户不要飘来飘去的动画**（不加漂浮、弹跳、飘落、闪烁星星）。后台是同色系的浅色（也有深色模式）。**用户不要绿色**：进账钴蓝、出账珊瑚红。字体：Playfair Display + Noto Serif SC（标题）、Manrope（正文/数字） |
 | `config.js` | 唯一配置：Supabase URL + anon key + 公司名 |
 | `supabase/setup.sql` | 建表、RLS 权限、`place_order` / `order_status` / `claim_admin` 函数、实时同步；**可重复运行** |
 | `SETUP.md` | 给用户的上线步骤 |
@@ -34,18 +39,22 @@
   - `settings`：`key='public'`（客户汇率，anon 可读）、`key='internal'`（内部汇率，仅管理员）。
   - `orders`：客户订单；anon 只能通过 `place_order` RPC 下单（汇率在服务器端按已发布汇率计算），用 `order_status(code)` 查单。
   - `admins`：管理员邮箱；**第一个登录后台的账号自动成为管理员**（`claim_admin`）。
+- 对客户汇率是**双向**的：每个币种对 `{b,q,buy,sell,r,on}`，都写成 1 b = ? q。`buy` = 客户用 b 换 q，`sell` = 客户用 q 换 b；`r` = 中间价（兼容旧数据）。服务器端 `_pair_rate` 按方向取价。主打 CNY⇄KZT 排第一。
 - 每笔账的汇率存为「每 1 美元的单位数」：`rates: {CNY, KZT}`。换汇（fx）的利润 = 收进 − 付出（按本笔汇率折算）。
+- 换汇（fx）记账表单：先填「客户给我们（收进）」→「本单汇率」（按 1 大币 = ? 小币 显示，`dealPair()`），付出金额自动算；保存 `dealRate/dealBase/dealQuote`。成本汇率（内部）用来算这单利润。
+- 网站订单在「待处理」时可以逐单改汇率（`data-orate`），客户得的金额自动重算。
+- 记账表单的客户选择器（`renderPicker` / `pickClient`）：搜索、选择、添加新客户。客户卡片点开是**客户档案**（`openClientDetail`）：全部账目 + 网站订单（按名字或电话匹配）+ 汇总 + 为TA记一笔。
 - 订单「完成并记账」= 生成一笔 fx：`currency`=客户要的币种（我们付出），`toCurrency`=客户付的币种（我们收进）。
 
 ## 网址
-- 客户网站：https://li6125791-sudo.github.io/boli/
-- 后台：https://li6125791-sudo.github.io/boli/admin.html
+- 网站（客户和后台同一个网址）：https://li6125791-sudo.github.io/boli/ ，后台从右上角「内部管理登录」进入
 - Supabase 控制台：https://supabase.com/dashboard/project/ehltorpszvtuupqwzocg
 
 ## 当前状态（2026-11-26）
-- 代码在分支 `claude/accounting-system-design-b57g1h`；`main` 只有 README。建议合并到 `main` 并把 Pages 改成 `main`（已向用户提议，待确认）。
+- GitHub Pages 从 `main` 分支 `/ (root)` 发布；PR #1 已合并。改动走新分支 + PR，用户在 GitHub 点 Merge。
 - 已完成：Supabase 项目创建、`setup.sql` 运行成功、后台账号已创建、`config.js` 已填 URL 和 anon key。
-- 进行中：GitHub Pages 开启（选分支 → Save）；关闭 Supabase「Allow new users to sign up」；第一次登录后台、发布汇率。
+- 双向汇率需要用户把新版 `supabase/setup.sql` 在 SQL Editor **再运行一次**（不运行时服务器按中间价 r 计算，仍能用）。
+- 待用户确认：已关闭 Supabase「Allow new users to sign up」；第一次登录后台、发布汇率。
 - 尚未在真实 Supabase 上端到端测试过（云端开发环境连不上 supabase.co）。
 
 ## 修改时的约定

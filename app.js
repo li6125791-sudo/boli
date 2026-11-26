@@ -1,10 +1,10 @@
-/* Boli 账本 — one script for both pages.
-   index.html sets BOLI_MODE="public"  → client rate board + online order form
-   admin.html sets BOLI_MODE="admin"   → password login, ledger, orders, rates
+/* Boli 账本 — one page, one address.
+   Visitors see the client rate board + online exchange order form.
+   The top-right "内部管理登录" button opens an email+password login; the owner then gets the
+   back office (dashboard, orders, ledger, clients, rates) on the same page.
    All data lives in Supabase (see supabase/setup.sql); every change is saved immediately. */
 (function(){
 "use strict";
-const MODE=window.BOLI_MODE||"public";
 const CFG=window.BOLI_CONFIG||{};
 const CURS=["CNY","USD","KZT"];
 const SYM={CNY:"¥",USD:"$",KZT:"₸"};
@@ -12,13 +12,13 @@ const CNAME={CNY:"人民币",USD:"美元",KZT:"坚戈"};
 const CATS={in:["货款","换汇收入","服务费","佣金","退款","其他收入"],out:["采购成本","运费物流","关税清关","佣金提成","工资","房租办公","银行手续费","其他支出"],fx:["换汇"]};
 const DEFAULT_SETTINGS={rates:{CNY:7.10,KZT:505},updated:""};
 const DEFAULT_PUB={company:CFG.company||"Boli",contact:"",notice:"",updated:"",published:false,
-  pairs:[{b:"USD",q:"KZT",r:505,buy:"",sell:"",on:true},{b:"USD",q:"CNY",r:7.1,buy:"",sell:"",on:true},{b:"CNY",q:"KZT",r:71,buy:"",sell:"",on:true}]};
+  pairs:[{b:"CNY",q:"KZT",buy:"",sell:"",on:true},{b:"USD",q:"KZT",buy:"",sell:"",on:true},{b:"USD",q:"CNY",buy:"",sell:"",on:false}]};
 const ORDER_ST={new:"待确认",confirmed:"已确认",done:"已完成",cancelled:"已取消"};
 
 let PUB=JSON.parse(JSON.stringify(DEFAULT_PUB));
 const S={role:"loading",txns:new Map(),clients:new Map(),orders:new Map(),settings:{...DEFAULT_SETTINGS,rates:{...DEFAULT_SETTINGS.rates}},
   view:"dash",disp:"CNY",period:"month",from:"",to:"",lf:{q:"",type:"",cur:"",client:"",cat:"",status:""},of:"open",
-  preview:false,lang:"zh",draft:null,email:"",save:{pending:0,last:0,error:false},loaded:false};
+  preview:false,lang:"zh",draft:null,email:"",save:{pending:0,last:0,error:false},loaded:false,showLogin:false,loginErr:""};
 let sb=null;
 
 /* ---------- utils ---------- */
@@ -41,7 +41,7 @@ function compact(n,cur){
 const rfmt=(n,d=4)=>(+n).toLocaleString("en-US",{maximumFractionDigits:d});
 function sig(n){const a=Math.abs(n);return rfmt(n,a>=100?2:a>=1?4:a>=0.01?5:7)}
 function plain(n){const a=Math.abs(n);return String(+n.toFixed(a>=100?2:a>=1?4:a>=0.01?5:7))}
-function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+function toast(msg){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
 function newId(){return (crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,10))}
 function fmtTime(iso){if(!iso)return "";const d=new Date(iso);return isoD(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())}
 function nowStamp(){const d=new Date(),off=-d.getTimezoneOffset(),a=Math.abs(off);return isoD(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())+" (UTC"+(off>=0?"+":"-")+Math.floor(a/60)+(a%60?":"+pad(a%60):"")+")"}
@@ -53,6 +53,7 @@ const ICON={
   eye:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   out:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  key:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>',
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   orders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12l2 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/><path d="M4 6h16M9 11h6M9 15h4"/></svg>',
   ledger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
@@ -60,6 +61,11 @@ const ICON={
   rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h14l-4-4M20 16H6l4 4"/></svg>'
 };
 const VIEWS=[["dash","概览"],["orders","订单"],["ledger","流水"],["clients","客户"],["rates","汇率"]];
+// the golden sun from the Kazakh flag, drawn once and reused in the hero bands
+const SUN=(()=>{let r="";for(let i=0;i<32;i++){const a=i*Math.PI/16,x1=50+Math.cos(a)*30,y1=50+Math.sin(a)*30,x2=50+Math.cos(a)*(i%2?44:48),y2=50+Math.sin(a)*(i%2?44:48);r+=`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`}
+  return `<svg class="sun" viewBox="0 0 100 100" aria-hidden="true"><g class="rays" stroke="currentColor" stroke-width="3" stroke-linecap="round">${r}</g><circle cx="50" cy="50" r="24" fill="currentColor"/></svg>`})();
+// split-flap departure-board digits for the rate tiles
+function flaps_unused(txt){return [...String(txt)].map((ch,i)=>`<span class="flap${/[0-9]/.test(ch)?"":" sep"}" style="--i:${i}">${esc(ch)}</span>`).join("")}
 
 /* ---------- money math: a transaction's rates are "units per 1 USD" ---------- */
 function rateOf(rates,c){return c==="USD"?1:num(rates&&rates[c])||num(S.settings.rates[c])||1}
@@ -71,9 +77,11 @@ function txValue(t,D){
   if(t.type==="out") return {inc:0,exp:conv(a+f,t.currency,D,r),fx:0};
   return {inc:0,exp:0,fx:conv(num(t.toAmount),t.toCurrency,D,r)-conv(a+f,t.currency,D,r)};
 }
-function pubRate1(ps,f,t){const d=ps.find(p=>p.b===f&&p.q===t);if(d)return num(d.r);const v=ps.find(p=>p.b===t&&p.q===f);return v?1/num(v.r):0}
+// client-facing quote: b→q uses "buy", q→b uses 1/"sell" (old data with only r falls back to r)
+const qBuy=p=>num(p.buy)||num(p.r),qSell=p=>num(p.sell)||num(p.r);
+function pubRate1(ps,f,t){const d=ps.find(p=>p.b===f&&p.q===t&&qBuy(p)>0);if(d)return qBuy(d);const v=ps.find(p=>p.b===t&&p.q===f&&qSell(p)>0);return v?1/qSell(v):0}
 function pubRate(P,from,to){
-  const ps=(P.pairs||[]).filter(p=>p.on!==false&&num(p.r)>0),dir=pubRate1(ps,from,to);if(dir)return dir;
+  const ps=(P.pairs||[]).filter(p=>p.on!==false),dir=pubRate1(ps,from,to);if(dir)return dir;
   for(const mid of CURS){if(mid===from||mid===to)continue;const a=pubRate1(ps,from,mid),b=pubRate1(ps,mid,to);if(a&&b)return a*b}
   return 0;
 }
@@ -141,7 +149,7 @@ function subscribe(){
 }
 async function refreshOrders(){try{const o=await q(sb.from("orders").select("*").order("created_at",{ascending:false}).limit(1000));
   const before=S.orders.size;S.orders=new Map(o.map(r=>[r.id,r]));if(S.orders.size>before){ping();toast("有新订单")}render()}catch(e){}}
-function ping(){const n=[...S.orders.values()].filter(o=>o.status==="new").length;document.title=(n?`(${n}) `:"")+"Boli 账本"}
+function ping(){const n=[...S.orders.values()].filter(o=>o.status==="new").length;document.title=(n?`(${n}) `:"")+"Boli 后台"}
 
 /* ---------- boot ---------- */
 async function boot(){
@@ -149,18 +157,20 @@ async function boot(){
   try{const o=JSON.parse(lsGet("boli-prefs")||"{}");if(CURS.includes(o.disp))S.disp=o.disp;if(o.period)S.period=o.period;if(o.view&&VIEWS.some(v=>v[0]===o.view))S.view=o.view;if(o.lang)S.lang=o.lang}catch(e){}
   if(!hadPrefs&&/^(ru|kk|ky|uz|be|uk)/i.test(navigator.language||""))S.lang="ru";
   const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))S.view=h;
-  if(!configured()){S.role=MODE==="admin"?"setup":"client";render();return}
+  if(!configured()){S.role="client";render();return}
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true}});
-  if(MODE==="public"){S.role="client";render();try{const d=await q(sb.from("settings").select("value").eq("key","public").maybeSingle());if(d&&d.value)PUB={...DEFAULT_PUB,...d.value}}catch(e){}render();refreshMyOrders();return}
-  sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_OUT"&&S.role==="owner"){S.role="login";render()}});
+  sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_OUT"&&S.role==="owner")toClient()});
   let session=null;try{session=(await sb.auth.getSession()).data.session}catch(e){}
-  if(!session){S.role="login";render();return}
-  await enterAdmin(session);
+  if(session){await enterAdmin(session);return}   // the owner's own device goes straight to the back office
+  S.role="client";render();
+  await loadPublic();render();refreshMyOrders();
 }
+async function loadPublic(){try{const d=await q(sb.from("settings").select("value").eq("key","public").maybeSingle());if(d&&d.value)PUB={...DEFAULT_PUB,...d.value}}catch(e){}}
+function toClient(){S.role="client";S.preview=false;S.showLogin=false;shellRole=null;S.txns.clear();S.orders.clear();S.clients.clear();S.loaded=false;document.title="Boli · 汇率与换汇预约";render();window.scrollTo({top:0})}
 async function enterAdmin(session){
   S.email=session&&session.user&&session.user.email||"";
   let ok=false;try{ok=await q(sb.rpc("claim_admin"))}catch(e){console.error(e)}
-  if(!ok){await sb.auth.signOut().catch(()=>{});S.role="login";S.loginErr="这个账号没有后台权限。";render();return}
+  if(!ok){await sb.auth.signOut().catch(()=>{});S.role="client";S.showLogin=true;S.loginErr="这个账号没有后台权限。";await loadPublic();render();return}
   S.role="owner";S.loaded=false;render();
   await syncAll();ping();subscribe();
 }
@@ -202,9 +212,8 @@ let shellRole=null;
 function render(){
   const root=$("#root");
   if(S.role==="loading")return;
-  if(S.role==="setup"){shellRole="setup";root.innerHTML=setupPage();return}
-  if(S.role==="login"){shellRole="login";root.innerHTML=loginPage();bindLogin();return}
-  if(S.role==="client"||S.preview){shellRole="client";root.innerHTML=publicPage(S.preview?previewPub():PUB,S.preview);bindPublic();return}
+  if(S.role==="client"||S.preview){shellRole="client";root.innerHTML=`<div class="pub">${publicPage(S.preview?previewPub():PUB,S.preview)}${S.showLogin&&!S.preview?loginModal():""}</div>`;bindPublic();if(S.showLogin&&!S.preview)bindLogin();return}
+  document.body.classList.remove("is-pub");
   if(shellRole!=="owner"||!$("#main")){shellRole="owner";root.innerHTML=ownerShell();bindShell();paintSave()}
   else{
     document.querySelectorAll(".tabs button,.bnav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.v===S.view)));
@@ -228,33 +237,30 @@ function render(){
   if(keep){const el=document.getElementById(keep.id);if(el){el.focus();try{el.setSelectionRange(keep.s,keep.e)}catch(e){}}}
 }
 
-/* ---------- setup / login ---------- */
-function setupPage(){
-  return `<section class="pub-hero ornament auth-hero"><div class="wrap"><div class="brand"><span class="mark">B</span><div><b>Boli 账本</b><small>还差一步</small></div></div></div></section>
-  <div class="auth-body"><div class="card" style="display:grid;gap:10px"><h2 style="margin:0">网站还没有连接数据库</h2>
-  <p style="margin:0;color:var(--muted)">按仓库里 <b>SETUP.md</b> 的步骤：创建免费的 Supabase 项目 → 运行 <code>supabase/setup.sql</code> → 把 Project URL 和 anon key 填进 <code>config.js</code>。填好后刷新这个页面。</p></div></div>`;
-}
-function loginPage(){
+/* ---------- login (opens from the top-right button) ---------- */
+function loginModal(){
   const em=lsGet("boli-email")||"";
-  return `<section class="pub-hero ornament auth-hero"><div class="wrap"><div class="brand"><span class="mark">B</span><div><b>Boli 账本</b><small>后台登录</small></div></div></div></section>
-  <div class="auth-body"><form class="card auth-card" id="loginForm" novalidate>
-    <h2 style="margin:0">登录后台</h2>
-    <div class="field"><label for="lg-email">邮箱</label><input id="lg-email" type="email" autocomplete="username" value="${esc(em)}" required></div>
+  return `<div class="scrim" id="lscrim"><form class="sheet auth-card" id="loginForm" novalidate>
+    <div class="auth-top"><span class="authcoin">${coin3d("KZT",56)}</span><div><h3 style="margin:0">内部管理登录</h3><p>只有管理员能进入。客户请直接使用本页预约。</p></div><button class="btn ghost" type="button" data-lclose aria-label="关闭">✕</button></div>
+    ${configured()?`<div class="field"><label for="lg-email">邮箱</label><input id="lg-email" type="email" autocomplete="username" value="${esc(em)}" required></div>
     <div class="field"><label for="lg-pass">密码</label><input id="lg-pass" type="password" autocomplete="current-password" required></div>
     <div class="err" id="lg-err" ${S.loginErr?"":"hidden"}>${esc(S.loginErr||"")}</div>
-    <button class="btn primary" type="submit" id="lg-btn" style="width:100%">登录</button>
-    <div style="font-size:12px;color:var(--muted)">账号在 Supabase 控制台 → Authentication → Users 创建。第一个登录的账号会自动成为管理员。</div>
+    <button class="btn primary big" type="submit" id="lg-btn">进入后台 →</button>`
+    :`<div class="banner">网站还没有连接数据库。按仓库里 SETUP.md 的步骤填好 config.js 后再登录。</div>`}
   </form></div>`;
 }
 function bindLogin(){
-  const f=$("#loginForm");if(!f)return;
+  const close=()=>{S.showLogin=false;S.loginErr="";render()};
+  const sc=$("#lscrim");if(!sc)return;
+  sc.addEventListener("click",e=>{if(e.target===sc||e.target.closest("[data-lclose]"))close()});
+  const f=$("#loginForm");if(!f||!$("#lg-email"))return;
   (lsGet("boli-email")?$("#lg-pass"):$("#lg-email")).focus();
   f.onsubmit=async e=>{e.preventDefault();const email=$("#lg-email").value.trim(),password=$("#lg-pass").value,err=$("#lg-err"),btn=$("#lg-btn");
     if(!email||!password){err.textContent="请填写邮箱和密码";err.hidden=false;return}
     btn.disabled=true;btn.textContent="正在登录…";S.loginErr="";
     const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error){btn.disabled=false;btn.textContent="登录";err.textContent=/confirm/i.test(error.message)?"这个邮箱还没确认，请在 Supabase 里把用户设为已确认":"邮箱或密码不对";err.hidden=false;return}
-    lsSet("boli-email",email);await enterAdmin(data.session);
+    if(error){btn.disabled=false;btn.textContent="进入后台 →";err.textContent=/confirm/i.test(error.message)?"这个邮箱还没确认，请在 Supabase 里把用户设为已确认":"邮箱或密码不对";err.hidden=false;return}
+    lsSet("boli-email",email);S.showLogin=false;await enterAdmin(data.session);
   };
 }
 
@@ -267,7 +273,7 @@ function ownerShell(){
       <select id="period" aria-label="统计期间">${[["month","本月"],["lastmonth","上月"],["quarter","近3个月"],["year","今年"],["all","全部"],["custom","自定义…"]].map(([k,l])=>`<option value="${k}"${S.period===k?" selected":""}>${l}</option>`).join("")}</select>
       <span class="ctrls" id="customRange" ${S.period==="custom"?"":"hidden"}><input type="date" id="from" aria-label="开始日期" value="${esc(S.from)}"><input type="date" id="to" aria-label="结束日期" value="${esc(S.to)}"></span>
       <div class="seg" id="dispCur" aria-label="折算币种">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${S.disp===c}" title="按${CNAME[c]}折算">${SYM[c]}</button>`).join("")}</div>
-      <button class="iconbtn" type="button" id="toPreview" title="客户看到的页面">${ICON.eye}<span class="hide-sm">客户视图</span></button>
+      <button class="iconbtn" type="button" id="toPreview" title="客户看到的页面">${ICON.eye}<span class="hide-sm">客户页面</span></button>
       <button class="iconbtn" type="button" id="logout" title="退出登录 ${esc(S.email)}">${ICON.out}<span class="hide-sm">退出</span></button>
     </div>
   </div></header>
@@ -294,7 +300,7 @@ function monthsSeries(D,count){
 function viewDash(){
   const D=S.disp,list=allTx().filter(inPeriod),T=totals(list,D),[,,plabel]=periodRange(),A=totals(allTx(),D);
   const margin=T.inc?T.profit/T.inc*100:0,bal=balances(allTx()),series=monthsSeries(D,12);
-  let h=`<section class="hero ornament">
+  let h=`<section class="hero ornament">${SUN}
     <div><div class="eyebrow">净利润 · ${esc(plabel)} · ${CNAME[D]}</div><div class="big">${fmt(T.profit,D)}</div>
       <div class="sub"><span>利润率 <b>${margin.toFixed(1)}%</b></span>${T.fx?`<span>含换汇利润 <b>${fmt(T.fx,D,{plus:true})}</b></span>`:""}<span>${T.count} 笔记录</span></div>
       ${spark(series)}</div>
@@ -328,7 +334,7 @@ function spark(series){
   const W=300,H=56,vals=series.map(d=>d.profit),mx=Math.max(...vals,0),mn=Math.min(...vals,0),rng=(mx-mn)||1;
   const pts=vals.map((v,i)=>[i/(vals.length-1||1)*(W-8)+4,H-6-(v-mn)/rng*(H-14)]);
   const line=pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "),last=pts[pts.length-1];
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="4,${H} ${line} ${W-4},${H}" fill="rgba(227,191,106,.16)"/><polyline points="${line}" fill="none" stroke="var(--gold-band)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--gold-band)"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="4,${H} ${line} ${W-4},${H}" fill="rgba(255,201,40,.22)"/><polyline points="${line}" fill="none" stroke="var(--sun)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--sun)"/></svg>`;
 }
 function monthChart(data,D){
   const W=640,H=250,pl=58,pr=12,pt=16,pb=30;
@@ -343,9 +349,9 @@ function monthChart(data,D){
     g+=`<text x="${x+bw/2}" y="${H-10}" text-anchor="middle" font-size="10" fill="var(--muted)">${+d.k.slice(5)}月</text>`;
     pts.push([x+bw/2,y_(d.profit),d]);
   });
-  g+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linejoin="round"/>`;
-  pts.forEach((p,i)=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?5:3}" fill="var(--panel)" stroke="var(--gold)" stroke-width="2.2"><title>${p[2].k} 利润 ${fmt(p[2].profit,D)}</title></circle>`});
-  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="月度进出账与利润">${g}</svg></div><div class="legend"><span><i style="background:var(--in)"></i>进账</span><span><i style="background:var(--out)"></i>出账</span><span><i style="background:var(--gold);height:3px;vertical-align:3px"></i>净利润（含换汇）</span></div>`;
+  g+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="var(--sun-deep)" stroke-width="2.4" stroke-linejoin="round"/>`;
+  pts.forEach((p,i)=>{g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?5:3}" fill="var(--panel)" stroke="var(--sun-deep)" stroke-width="2.2"><title>${p[2].k} 利润 ${fmt(p[2].profit,D)}</title></circle>`});
+  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="月度进出账与利润">${g}</svg></div><div class="legend"><span><i style="background:var(--in)"></i>进账</span><span><i style="background:var(--out)"></i>出账</span><span><i style="background:var(--sun-deep);height:3px;vertical-align:3px"></i>净利润（含换汇）</span></div>`;
 }
 function niceCeil(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p}
 
@@ -372,7 +378,8 @@ function orderCard(o,D){
     <div class="ohead"><span class="chip ost-${esc(st)}">${ORDER_ST[st]||esc(st)}</span><span class="num ocode">#${esc(o.code)}</span><span class="otime">${esc(fmtTime(o.created_at))}</span></div>
     <div class="owho"><b>${esc(o.name)}</b><button class="linkbtn num" type="button" data-copy="${esc(o.phone)}">${esc(o.phone)}</button></div>
     <div class="odeal"><div><small>客户付</small><b class="num">${fmt(num(o.amount),o.from_cur)}</b></div><span class="arrow">→</span><div><small>客户得</small><b class="num">${fmt(num(o.to_amount),o.to_cur)}</b></div></div>
-    <div class="ometa"><span>汇率 1 ${esc(o.from_cur)} = ${sig(num(o.rate))} ${esc(o.to_cur)}</span>${o.method?`<span>${esc(o.method)}</span>`:""}${o.want_date?`<span>希望 ${esc(o.want_date)}</span>`:""}<span class="${p<0?"neg":"pos"}">预计利润 ${fmt(p,D,{plus:true})}</span></div>
+    ${st==="new"||st==="confirmed"?(()=>{const p=dealPair(o.from_cur,o.to_cur);return `<div class="field orate"><label for="or-${esc(o.id)}">本单汇率 · 1 ${p.b} = ? ${p.q}<small>可以按这位客户单独改，客户得的金额自动重算</small></label><input id="or-${esc(o.id)}" data-orate="${esc(o.id)}" inputmode="decimal" value="${plain(factorToDeal(o.from_cur,o.to_cur,num(o.rate)))}"></div>`})():""}
+    <div class="ometa"><span>汇率 ${rateLine(o.from_cur,o.to_cur,num(o.rate))}</span>${o.method?`<span>${esc(o.method)}</span>`:""}${o.want_date?`<span>希望 ${esc(o.want_date)}</span>`:""}<span class="${p<0?"neg":"pos"}">预计利润 ${fmt(p,D,{plus:true})}</span></div>
     ${o.note?`<div class="onote">客户备注：${esc(o.note)}</div>`:""}
     <div class="field"><label for="an-${esc(o.id)}">给客户的回复（客户查订单时能看到）</label><input id="an-${esc(o.id)}" data-anote="${esc(o.id)}" value="${esc(o.admin_note||"")}" placeholder="例如：明天 10 点到店，带护照"></div>
     <div class="oacts">${st==="new"?`<button class="btn primary" type="button" data-oact="confirm">确认订单</button>`:""}
@@ -389,7 +396,7 @@ async function orderAction(id,act,btn){
   if(act==="open")return openTx(o.txn_id);
   if(act==="book"){
     // exchange from the business side: we hand over to_amount(to_cur), we receive amount(from_cur)
-    openTx(null,{type:"fx",date:today(),client:o.name,currency:o.to_cur,amount:String(o.to_amount),fee:"",toCurrency:o.from_cur,toAmount:String(o.amount),
+    openTx(null,{type:"fx",date:today(),client:o.name,currency:o.to_cur,amount:String(o.to_amount),fee:"",toCurrency:o.from_cur,toAmount:String(o.amount),dealRate:plain(factorToDeal(o.from_cur,o.to_cur,num(o.rate))),
       ref:"订单 "+o.code,note:[o.method,o.note].filter(Boolean).join(" · "),orderId:o.id},async txnId=>{
       await updateOrder(id,{status:"done",txn_id:txnId});
       if(!clientByName(o.name))await saveClient({name:o.name,contact:o.phone,country:"",note:"来自网站订单",createdAt:Date.now()});
@@ -409,7 +416,7 @@ function rowHTML(t){
     const s=t.type==="in"?1:-1;amt=`<span class="${s>0?"pos":"neg"}">${fmt(s*num(t.amount),t.currency,{plus:true})}</span>${num(t.fee)?`<small>手续费 ${fmt(num(t.fee),t.currency)}</small>`:""}`;
     cv=fmt(s*(v.inc||v.exp),D,{plus:true});tag=`<span class="chip ${s>0?"t-in":"t-out"}">${s>0?"进账":"出账"}</span>`;
   }
-  const rt=t.type==="fx"?`1${t.currency}=${sig(num(t.toAmount)/(num(t.amount)||1))}${t.toCurrency}`:t.currency==="USD"?`1$=¥${rfmt(rateOf(t.rates,"CNY"))} · ₸${rfmt(rateOf(t.rates,"KZT"),2)}`:`1$=${rfmt(rateOf(t.rates,t.currency),2)}${SYM[t.currency]}`;
+  const rt=t.type==="fx"?(t.dealRate&&t.dealBase?`本单 1${t.dealBase}=${sig(num(t.dealRate))}${t.dealQuote}`:`1${t.currency}=${sig(num(t.toAmount)/(num(t.amount)||1))}${t.toCurrency}`):t.currency==="USD"?`1$=¥${rfmt(rateOf(t.rates,"CNY"))} · ₸${rfmt(rateOf(t.rates,"KZT"),2)}`:`1$=${rfmt(rateOf(t.rates,t.currency),2)}${SYM[t.currency]}`;
   return `<div class="row" data-id="${esc(t.id)}" tabindex="0" role="button"><span class="d">${esc(t.date)}</span>
     <div class="who"><b>${esc(t.client||t.category||"未指定")}</b><span>${tag}<span class="chip c-${t.currency}">${t.currency}</span>${t.status==="pending"?`<span class="chip st-pending">${t.type==="in"?"待收":"待付"}</span>`:""}${esc(t.client?t.category||"":"")}${t.ref?" · "+esc(t.ref):""}${t.note?" · "+esc(t.note):""}<span class="num" style="opacity:.75">${esc(rt)}</span></span></div>
     <div class="amt">${amt}</div><div class="amt conv">${cv}</div></div>`;
@@ -455,35 +462,54 @@ function viewClients(){
   </div>`}).join("")}</div>`:'<div class="empty-note">还没有客户。记账时填写客户名称，或客户在网站下单完成后，都会自动加入这里。</div>'}</section>`;
 }
 
-/* ---------- rates (internal + published) ---------- */
-function getDraft(){if(!S.draft)S.draft=JSON.parse(JSON.stringify(PUB));return S.draft}
+/* ---------- rates (internal + published, two directions per pair) ---------- */
+// A pair b/q carries two quotes, both written as "1 b = ? q":
+//   buy  — client gives b, gets q   (we buy b)
+//   sell — client gives q, gets b   (we sell b)
+const PAIR_ORDER=[["CNY","KZT"],["USD","KZT"],["USD","CNY"]];
+function normPairs(ps){
+  const out=(ps||[]).filter(p=>p&&p.b&&p.q).map(p=>({b:p.b,q:p.q,buy:hasVal(p.buy)?p.buy:(p.r??""),sell:hasVal(p.sell)?p.sell:(p.r??""),on:p.on!==false}));
+  for(const [b,q] of PAIR_ORDER)if(!out.some(p=>p.b===b&&p.q===q))out.push({b,q,buy:"",sell:"",on:b==="CNY"});
+  const rank=p=>{const i=PAIR_ORDER.findIndex(([b,q])=>b===p.b&&q===p.q);return i<0?9:i};
+  return out.sort((x,y)=>rank(x)-rank(y));
+}
+function getDraft(){if(!S.draft){S.draft=JSON.parse(JSON.stringify(PUB));S.draft.pairs=normPairs(S.draft.pairs)}return S.draft}
 function internalPair(b,q){return crossRate(S.settings.rates,b,q)}
-function spreadTxt(p){const ir=internalPair(p.b,p.q),sp=ir?(num(p.r)/ir-1)*100:0;return [sp,`比内部价 ${sp>=0?"+":""}${sp.toFixed(2)}%`]}
+const pct=v=>(v>=0?"+":"")+(v*100).toFixed(2)+"%";
+function spreadHTML(p){
+  const ir=internalPair(p.b,p.q),bu=num(p.buy),se=num(p.sell);
+  if(!bu||!se)return '<span>两个方向都要填</span>';
+  const bad=se<bu;
+  return `<span class="${bu<=ir?"spread-pos":"spread-neg"}">买入 ${pct(bu/ir-1)}</span><span class="${se>=ir?"spread-pos":"spread-neg"}">卖出 ${pct(se/ir-1)}</span><span class="${bad?"spread-neg":""}">${bad?"⚠ 卖出价低于买入价":"价差 "+pct(se/bu-1)}</span>`;
+}
 function viewRates(){
   const r=S.settings.rates,d=getDraft(),used=allTx().filter(t=>t.type!=="fx").slice(0,8);
+  const live=normPairs(PUB.pairs).filter(p=>p.on&&num(p.buy)&&num(p.sell));
   return `<section class="card" style="display:grid;gap:16px">
-    <h2>对客户公布的汇率 <span class="hint">客户在网站首页只能看到这里发布的内容，下单也按这个汇率计算</span></h2>
-    ${PUB.published?`<div class="banner info"><b>当前已发布</b>${esc(PUB.updated)} · ${(PUB.pairs||[]).filter(p=>p.on).map(p=>`1 ${p.b} = ${sig(num(p.r))} ${p.q}`).join(" · ")}</div>`:'<div class="banner"><b>还没发布</b>客户现在只会看到“汇率暂未公布”，也不能下单。填好下面的汇率后点「发布给客户」。</div>'}
-    <div class="pubgrid">${d.pairs.map((p,i)=>{const [sp,txt]=spreadTxt(p);return `<div class="pubpair">
-      <div class="top-row"><span><span class="chip c-${p.b}">${p.b}</span> → <span class="chip c-${p.q}">${p.q}</span></span><label class="toggle"><input type="checkbox" id="pon-${i}" data-pon="${i}" ${p.on?"checked":""}>给客户显示</label></div>
-      <div class="field"><label for="pr-${i}">1 ${p.b} = ? ${p.q}（客户价）</label><input class="rate" id="pr-${i}" data-pr="${i}" inputmode="decimal" value="${esc(p.r)}"></div>
-      <div class="fgrid"><div class="field"><label for="pb-${i}">买入价（可选）</label><input id="pb-${i}" inputmode="decimal" value="${esc(p.buy)}" placeholder="—"></div><div class="field"><label for="ps-${i}">卖出价（可选）</label><input id="ps-${i}" inputmode="decimal" value="${esc(p.sell)}" placeholder="—"></div></div>
-      <div class="meta"><span class="lock">${ICON.lock}内部价 ${sig(internalPair(p.b,p.q))}</span><span class="${sp>=0?"spread-pos":"spread-neg"}" data-spread="${i}">${txt}</span></div>
-    </div>`}).join("")}</div>
+    <h2>对客户公布的汇率 <span class="hint">每个币种两个方向分别报价，客户下单按方向自动计算</span></h2>
+    ${PUB.published?`<div class="banner info"><b>当前已发布</b>${esc(PUB.updated)} · ${live.map(p=>`${p.b}→${p.q} ${sig(num(p.buy))} / ${p.q}→${p.b} ${sig(num(p.sell))}`).join(" · ")}</div>`:'<div class="banner"><b>还没发布</b>客户现在只会看到“今日汇率还没公布”，也不能下单。填好下面的汇率后点「发布给客户」。</div>'}
+    <div class="pubgrid">${d.pairs.map((p,i)=>`<div class="pubpair${p.b==="CNY"&&p.q==="KZT"?" feat":""}">
+      <div class="top-row"><span><span class="chip c-${p.b}">${p.b}</span> ⇄ <span class="chip c-${p.q}">${p.q}</span>${p.b==="CNY"&&p.q==="KZT"?' <span class="chip t-fx">主打</span>':""}</span><label class="toggle"><input type="checkbox" id="pon-${i}" ${p.on?"checked":""}>给客户显示</label></div>
+      <div class="field"><label for="pbuy-${i}">客户用${CNAME[p.b]}换${CNAME[p.q]}<small>1 ${p.b} = ? ${p.q}　（我们买入 ${p.b}）</small></label><input class="rate" id="pbuy-${i}" data-pp="${i}" inputmode="decimal" value="${esc(p.buy)}" placeholder="例如 ${sig(internalPair(p.b,p.q)*0.995)}"></div>
+      <div class="field"><label for="psell-${i}">客户用${CNAME[p.q]}换${CNAME[p.b]}<small>1 ${p.b} = ? ${p.q}　（我们卖出 ${p.b}）</small></label><input class="rate" id="psell-${i}" data-pp="${i}" inputmode="decimal" value="${esc(p.sell)}" placeholder="例如 ${sig(internalPair(p.b,p.q)*1.005)}"></div>
+      <div class="meta"><span class="lock">${ICON.lock}内部价 ${sig(internalPair(p.b,p.q))}</span></div>
+      <div class="meta spreads" data-spread="${i}">${spreadHTML(p)}</div>
+    </div>`).join("")}</div>
+    <div class="ctrls autofill"><span>按内部汇率自动填：买入 −</span><input id="autoPct" class="pill" type="number" step="0.1" min="0" value="${esc(lsGet("boli-autopct")||"0.5")}" aria-label="差价百分比"><span>% / 卖出 +同样百分比</span><button class="btn" type="button" id="useInternal">自动填入</button></div>
     <div class="fgrid">
       <div class="field"><label for="pub-company">公司名称（网站标题）</label><input id="pub-company" value="${esc(d.company)}"></div>
       <div class="field"><label for="pub-contact">联系方式（电话 / 微信 / WhatsApp）</label><input id="pub-contact" value="${esc(d.contact)}" placeholder="例如 +7 700 000 0000"></div>
       <div class="field full"><label for="pub-notice">给客户的说明（可选）</label><textarea id="pub-notice" rows="2" placeholder="例如：大额请提前电话确认 / Крупные суммы — по звонку">${esc(d.notice)}</textarea></div>
     </div>
-    <div class="ctrls"><button class="btn gold" type="button" id="publishPub">发布给客户</button><button class="btn" type="button" id="useInternal">按内部汇率填入</button><button class="btn ghost" type="button" id="previewPub">${ICON.eye} 预览客户页面</button><a class="btn ghost" href="./" target="_blank" rel="noopener">打开客户网站 ↗</a></div>
-    <div style="font-size:12px;color:var(--muted)">点「发布给客户」后，网站首页马上显示新汇率，客户下单也立即按新汇率计算。你的账本、客户、利润和内部汇率客户都看不到。</div>
+    <div class="ctrls"><button class="btn gold" type="button" id="publishPub">发布给客户</button><button class="btn ghost" type="button" id="previewPub">${ICON.eye} 预览客户页面</button></div>
+    <div style="font-size:12px;color:var(--muted)">点「发布给客户」后，网站马上显示新汇率，客户下单也立即按新汇率计算。你的账本、客户、利润和内部汇率客户都看不到。</div>
   </section>
   <section class="card" style="display:grid;gap:14px"><h2>内部记账汇率 <span class="lock">${ICON.lock}只有你能看到</span></h2>
     <div style="font-size:12px;color:var(--muted);margin-top:-8px">新记账时自动带入，每笔仍可单独修改${S.settings.updated?" · 更新于 "+esc(S.settings.updated):""}</div>
     <div class="rate-big">
       <div class="rate-box"><label for="r-cny">1 美元 USD = ? 人民币 CNY</label><input id="r-cny" inputmode="decimal" value="${r.CNY}"></div>
       <div class="rate-box"><label for="r-kzt">1 美元 USD = ? 坚戈 KZT</label><input id="r-kzt" inputmode="decimal" value="${r.KZT}"></div>
-      <div class="rate-box"><label>交叉汇率（自动计算）</label><div class="num" id="r-cross" style="font-size:15px;font-weight:600"></div></div>
+      <div class="rate-box"><label>交叉汇率（自动计算）</label><div class="num" id="r-cross" style="font-size:15px;font-weight:700"></div></div>
     </div>
     <div><button class="btn primary" type="button" id="saveRates">保存内部汇率</button></div>
     <div class="table-wrap"><table class="matrix" id="matrix"></table></div>
@@ -491,88 +517,167 @@ function viewRates(){
   <section class="grid g-2">
     <div class="card"><h2>汇率换算器 <span class="hint">按内部汇率</span></h2><div class="fgrid">
       <div class="field"><label for="cv-amt">金额</label><input id="cv-amt" class="big" inputmode="decimal" value="10000"></div>
-      <div class="field"><label for="cv-from">币种</label><select id="cv-from">${CURS.map(c=>`<option value="${c}"${c==="USD"?" selected":""}>${c} ${CNAME[c]}</option>`).join("")}</select></div>
+      <div class="field"><label for="cv-from">币种</label><select id="cv-from">${CURS.map(c=>`<option value="${c}"${c==="CNY"?" selected":""}>${c} ${CNAME[c]}</option>`).join("")}</select></div>
       <div class="full calc" id="cv-out"></div></div></div>
     <div class="card"><h2>最近记账使用的汇率</h2>${used.length?`<div class="table-wrap"><table class="matrix"><tr><th>日期</th><th>USD/CNY</th><th>USD/KZT</th><th>CNY/KZT</th></tr>${used.map(t=>`<tr><td>${esc(t.date)}</td><td>${rfmt(rateOf(t.rates,"CNY"))}</td><td>${rfmt(rateOf(t.rates,"KZT"),2)}</td><td>${rfmt(crossRate(t.rates,"CNY","KZT"),3)}</td></tr>`).join("")}</table></div>`:'<div class="empty-note">还没有记账记录</div>'}</div>
   </section>`;
 }
 function updateRatesView(){
   const r={CNY:num($("#r-cny").value)||1,KZT:num($("#r-kzt").value)||1};
-  $("#r-cross").innerHTML=`1 CNY = ${rfmt(r.KZT/r.CNY,3)} KZT<br>100 KZT = ¥${rfmt(100*r.CNY/r.KZT,4)}`;
+  $("#r-cross").innerHTML=`1 CNY = ${rfmt(r.KZT/r.CNY,3)} KZT<br>10,000 KZT = ¥${rfmt(10000*r.CNY/r.KZT,2)}`;
   $("#matrix").innerHTML=`<tr><th>1 单位 →</th>${CURS.map(c=>`<th>${c}</th>`).join("")}</tr>`+CURS.map(a=>`<tr><td><span class="chip c-${a}">${a}</span></td>${CURS.map(b=>`<td>${sig(crossRate(r,a,b))}</td>`).join("")}</tr>`).join("");
   const amt=num($("#cv-amt").value),from=$("#cv-from").value;
   $("#cv-out").innerHTML=CURS.filter(c=>c!==from).map(c=>`<div class="r hl"><span>${CNAME[c]} ${c}</span><b>${fmt(conv(amt,from,c,r),c)}</b></div>`).join("");
 }
 function readDraft(){
   if(!$("#pub-company"))return;const d=getDraft();
-  d.pairs.forEach((p,i)=>{if(!$("#pr-"+i))return;p.r=$("#pr-"+i).value;p.buy=$("#pb-"+i).value;p.sell=$("#ps-"+i).value;p.on=$("#pon-"+i).checked});
+  d.pairs.forEach((p,i)=>{if(!$("#pbuy-"+i))return;p.buy=$("#pbuy-"+i).value.trim();p.sell=$("#psell-"+i).value.trim();p.on=$("#pon-"+i).checked});
   d.company=$("#pub-company").value.trim();d.contact=$("#pub-contact").value.trim();d.notice=$("#pub-notice").value.trim();
 }
 async function publishPub(btn){
-  readDraft();const d=getDraft();
-  const bad=d.pairs.find(p=>p.on&&!(num(p.r)>0));if(bad){toast(`请填写 ${bad.b}→${bad.q} 的汇率`);return}
-  if(!d.pairs.some(p=>p.on)){toast("至少给客户显示一个汇率");return}
-  const opt=v=>String(v??"").trim()===""?"":num(v)||"";
+  readDraft();const d=getDraft(),on=d.pairs.filter(p=>p.on);
+  if(!on.length){toast("至少给客户显示一个币种");return}
+  const miss=on.find(p=>!(num(p.buy)>0)||!(num(p.sell)>0));if(miss){toast(`请填写 ${miss.b}⇄${miss.q} 两个方向的汇率`);return}
+  const bad=on.find(p=>num(p.sell)<num(p.buy));if(bad){toast(`${bad.b}⇄${bad.q}：卖出价低于买入价，客户来回换会让你亏钱，请检查`);return}
   const next={company:d.company||CFG.company||"Boli",contact:d.contact,notice:d.notice,updated:nowStamp(),published:true,
-    pairs:d.pairs.map(p=>({b:p.b,q:p.q,r:num(p.r),buy:opt(p.buy),sell:opt(p.sell),on:!!p.on}))};
+    pairs:d.pairs.map(p=>{const bu=num(p.buy),se=num(p.sell);return {b:p.b,q:p.q,buy:bu||"",sell:se||"",r:bu&&se?+((bu+se)/2).toFixed(6):"",on:!!p.on}})};
   btn.disabled=true;btn.textContent="正在发布…";
-  try{await saveSetting("public",next);PUB=next;S.draft=null;render();toast("已发布，客户网站已更新")}
+  try{await saveSetting("public",next);PUB=next;S.draft=null;render();toast("已发布，客户网站已更新 ✨")}
   catch(e){btn.disabled=false;btn.textContent="发布给客户"}
 }
 
 /* ---------- public site ---------- */
+const NAMES={zh:{USD:"美元",KZT:"坚戈",CNY:"人民币"},ru:{USD:"доллар",KZT:"тенге",CNY:"юань"}};
 const L={
-  zh:{title:"今日汇率",sub:"以下汇率由我们设定，可在线预约换汇",upd:"更新于",none:"汇率暂未公布，请联系我们获取报价。",buy:"买入",sell:"卖出",
-    names:{USD:"美元",KZT:"坚戈",CNY:"人民币"},preview:"这是客户看到的页面（预览）",back:"返回后台",noconv:"暂无汇率",copy:"复制",copied:"已复制",contact:"联系我们",
-    disc:"汇率仅供参考，以我们确认的订单为准。",order:"在线预约换汇",orderSub:"填好金额和联系方式，我们确认后会联系你。",pay:"我付",get:"我要换成",amount:"金额",youGet:"预计可得",rate:"汇率",
-    name:"姓名",phone:"电话 / WhatsApp / 微信",method:"交割方式",methods:["到店现金","银行转账","其他"],date:"希望日期",note:"备注（可选）",submit:"提交预约",sending:"正在提交…",
-    ok:"预约已提交",code:"订单号",keep:"请保存订单号，用它随时查询进度。我们会尽快联系你。",again:"再预约一笔",my:"我的订单",lookup:"查询订单",lookupPh:"输入订单号",check:"查询",notfound:"没有找到这个订单号",reply:"我们的回复",
-    st:{new:"待确认",confirmed:"已确认",done:"已完成",cancelled:"已取消"},
-    err:{missing_contact:"请填写姓名和电话",bad_amount:"请输入正确的金额",no_rate:"这个币种暂时不能预约，请直接联系我们",bad_currency:"请选择两种不同的币种",busy:"现在提交的人太多，请稍后再试",fail:"提交失败，请检查网络后重试，或直接联系我们"}},
-  ru:{title:"Курс валют",sub:"Курсы установлены нами, обмен можно забронировать онлайн",upd:"Обновлено",none:"Курсы пока не опубликованы. Свяжитесь с нами для расчёта.",buy:"Покупка",sell:"Продажа",
-    names:{USD:"Доллар США",KZT:"Тенге",CNY:"Юань"},preview:"Так страницу видят клиенты (предпросмотр)",back:"Вернуться",noconv:"Нет курса",copy:"Копировать",copied:"Скопировано",contact:"Контакты",
-    disc:"Курс справочный, окончательный — в подтверждённой заявке.",order:"Заявка на обмен",orderSub:"Укажите сумму и контакты — мы подтвердим и свяжемся с вами.",pay:"Я отдаю",get:"Хочу получить",amount:"Сумма",youGet:"Вы получите примерно",rate:"Курс",
-    name:"Имя",phone:"Телефон / WhatsApp",method:"Способ",methods:["Наличные в офисе","Банковский перевод","Другое"],date:"Желаемая дата",note:"Комментарий (необязательно)",submit:"Отправить заявку",sending:"Отправляем…",
-    ok:"Заявка отправлена",code:"Номер заявки",keep:"Сохраните номер — по нему можно проверить статус. Мы скоро свяжемся с вами.",again:"Новая заявка",my:"Мои заявки",lookup:"Проверить заявку",lookupPh:"Номер заявки",check:"Проверить",notfound:"Заявка не найдена",reply:"Наш ответ",
-    st:{new:"Ожидает подтверждения",confirmed:"Подтверждена",done:"Выполнена",cancelled:"Отменена"},
-    err:{missing_contact:"Укажите имя и телефон",bad_amount:"Введите корректную сумму",no_rate:"Этот обмен сейчас недоступен, свяжитесь с нами",bad_currency:"Выберите две разные валюты",busy:"Слишком много заявок, попробуйте чуть позже",fail:"Не удалось отправить. Проверьте интернет или свяжитесь с нами"}}
+  zh:{brandSub:"人民币 · 坚戈 · 美元",eyebrow:"CNY ⇄ KZT · 双向换汇",h1a:"人民币 ⇄ 坚戈",h1b:"双向换汇，在线预约",
+    sub:"汇率每天由我们亲自设定，两个方向分别报价，公开透明。填好金额，马上知道能换多少。",cta:"立即预约换汇",ctaRates:"看今日汇率",
+    upd:"汇率更新于",none:"今日汇率还没公布，请稍后再来，或直接联系我们。",board:"今日汇率",boardSub:"同一个币种，换进和换出分别报价",
+    dir:(a,b)=>`${NAMES.zh[a]}换${NAMES.zh[b]}`,youPay:"你付",youGet:"你得",example:"例如",
+    steps:"三步完成换汇",s:[["📝","在线预约","选好方向、填好金额和联系方式"],["📞","我们确认","核对汇率后尽快联系你"],["🤝","完成交割","现金或转账，按确认的金额"]],
+    order:"在线预约换汇",orderSub:"选好方向和金额，我们确认后会联系你。",pay:"我付",get:"我要换成",amount:"金额",estimate:"预计可得",rate:"汇率",
+    name:"姓名",phone:"电话 / WhatsApp / 微信",method:"交割方式",methods:["当面现金","银行转账","其他"],date:"希望日期",note:"备注（可选）",submit:"提交预约",sending:"正在提交…",
+    ok:"预约成功！",code:"订单号",keep:"请保存订单号，用它随时查询进度。我们会尽快联系你。",again:"再预约一笔",my:"我的订单",lookup:"查询订单",lookupPh:"输入订单号",check:"查询",notfound:"没有找到这个订单号",reply:"我们的回复",
+    st:{new:"待确认",confirmed:"已确认",done:"已完成",cancelled:"已取消"},contact:"联系我们",copy:"复制",copied:"已复制",
+    disc:"汇率仅供参考，以我们确认的订单为准。",preview:"这是客户看到的页面（预览）",back:"返回后台",noconv:"暂无这个方向的汇率",
+    hello:["你好！","欢迎~","换汇吗？"],login:"内部管理登录",
+    err:{missing_contact:"请填写姓名和电话",bad_amount:"请输入正确的金额",no_rate:"这个方向暂时不能预约，请直接联系我们",bad_currency:"请选择两种不同的币种",busy:"现在提交的人太多，请稍后再试",fail:"提交失败，请检查网络后重试，或直接联系我们"}},
+  ru:{brandSub:"юань · тенге · доллар",eyebrow:"CNY ⇄ KZT · обмен в обе стороны",h1a:"Юань ⇄ Тенге",h1b:"обмен в обе стороны, заявка онлайн",
+    sub:"Курс мы устанавливаем сами каждый день — отдельно для покупки и продажи. Введите сумму и сразу узнаете, сколько получите.",cta:"Оставить заявку",ctaRates:"Курс на сегодня",
+    upd:"Курс обновлён",none:"Курс на сегодня ещё не опубликован. Загляните позже или свяжитесь с нами.",board:"Курс на сегодня",boardSub:"Для каждой валюты — отдельный курс в обе стороны",
+    dir:(a,b)=>`${cap(NAMES.ru[a])} → ${NAMES.ru[b]}`,youPay:"Вы отдаёте",youGet:"Вы получаете",example:"Например",
+    steps:"Обмен в три шага",s:[["📝","Заявка онлайн","Направление, сумма и контакты"],["📞","Подтверждение","Сверим курс и свяжемся с вами"],["🤝","Обмен","Наличными или переводом по подтверждённой сумме"]],
+    order:"Заявка на обмен",orderSub:"Выберите направление и сумму — мы подтвердим и свяжемся с вами.",pay:"Я отдаю",get:"Хочу получить",amount:"Сумма",estimate:"Вы получите примерно",rate:"Курс",
+    name:"Имя",phone:"Телефон / WhatsApp",method:"Способ",methods:["Наличные при встрече","Банковский перевод","Другое"],date:"Желаемая дата",note:"Комментарий (необязательно)",submit:"Отправить заявку",sending:"Отправляем…",
+    ok:"Заявка принята!",code:"Номер заявки",keep:"Сохраните номер — по нему можно проверить статус. Мы скоро свяжемся с вами.",again:"Новая заявка",my:"Мои заявки",lookup:"Проверить заявку",lookupPh:"Номер заявки",check:"Проверить",notfound:"Заявка не найдена",reply:"Наш ответ",
+    st:{new:"Ожидает",confirmed:"Подтверждена",done:"Выполнена",cancelled:"Отменена"},contact:"Контакты",copy:"Копировать",copied:"Скопировано",
+    disc:"Курс справочный, окончательный — в подтверждённой заявке.",preview:"Так страницу видят клиенты (предпросмотр)",back:"Вернуться",noconv:"Нет курса для этого направления",
+    hello:["Сәлем!","Привет!","Обмен?"],login:"Вход для персонала",
+    err:{missing_contact:"Укажите имя и телефон",bad_amount:"Введите корректную сумму",no_rate:"Это направление сейчас недоступно, свяжитесь с нами",bad_currency:"Выберите две разные валюты",busy:"Слишком много заявок, попробуйте чуть позже",fail:"Не удалось отправить. Проверьте интернет или свяжитесь с нами"}}
 };
-const OF={from:"USD",to:"KZT",amount:"1000",name:"",phone:"",method:0,date:"",note:"",result:null,sending:false,err:""};
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1)}
+const OF={from:"CNY",to:"KZT",amount:"10000",name:"",phone:"",method:0,date:"",note:"",result:null,sending:false,err:""};
 let MY=[];try{MY=JSON.parse(lsGet("boli-myorders")||"[]")}catch(e){MY=[]}
 const myStatus=new Map();
-const hasVal=v=>v!==""&&v!=null&&num(v)>0;
+function hasVal(v){return v!==""&&v!=null&&num(v)>0}
 function previewPub(){const d=getDraft();return {...d,published:true,updated:d.updated||PUB.updated||nowStamp()}}
-function publicPage(P,preview){
-  const T=L[S.lang]||L.zh,ps=(P.pairs||[]).filter(p=>p.on!==false&&num(p.r)>0),ok=P.published&&ps.length;
-  return `${preview?`<div class="preview-bar"><div class="wrap"><span>${esc(T.preview)}</span><button class="btn" type="button" id="exitPreview">${esc(T.back)}</button></div></div>`:""}
-  <section class="pub-hero ornament"><div class="wrap">
-    <div class="pub-head"><div class="brand"><span class="mark">${esc([...(P.company||"B")][0])}</span><div><b>${esc(P.company||"Boli")}</b><small>USD · KZT · CNY</small></div></div>
-      <div class="langs">${[["zh","中文"],["ru","Рус"]].map(([k,l])=>`<button type="button" data-lang="${k}" aria-pressed="${S.lang===k}">${l}</button>`).join("")}</div></div>
-    <div class="pub-title"><h1>${esc(T.title)}</h1><p>${esc(T.sub)}</p>${ok?`<span class="stamp"><i></i>${esc(T.upd)} ${esc(P.updated)}</span>`:""}</div>
-  </div></section>
-  <div class="pub-body">
-    ${ok?`<div class="board">${ps.map(p=>`<div class="quote">
-      <div class="pair"><span class="chip c-${p.b}">${p.b}</span><span class="arrow">→</span><span class="chip c-${p.q}">${p.q}</span><span style="color:var(--muted);font-weight:600;margin-left:auto;font-size:12px">${esc(T.names[p.b])} → ${esc(T.names[p.q])}</span></div>
-      <div class="val">${sig(num(p.r))}<small>${SYM[p.q]}</small></div>
-      <div class="inv">1 ${p.b} = ${sig(num(p.r))} ${p.q} · 1 ${p.q} = ${sig(1/num(p.r))} ${p.b}</div>
-      ${hasVal(p.buy)||hasVal(p.sell)?`<div class="bs"><div><small>${esc(T.buy)}</small><b>${hasVal(p.buy)?sig(num(p.buy)):"—"}</b></div><div><small>${esc(T.sell)}</small><b>${hasVal(p.sell)?sig(num(p.sell)):"—"}</b></div></div>`:""}
-    </div>`).join("")}</div>
-    ${orderSection(P,T,preview)}`
-    :`<div class="card emptystate"><h3>${esc(T.title)}</h3><p>${esc(T.none)}</p></div>`}
-    ${myOrdersSection(T)}
-    ${P.notice?`<div class="notice">${esc(P.notice)}</div>`:""}
-    ${P.contact?`<div class="card contact"><div><div class="eyebrow">${esc(T.contact)}</div><div class="val" id="pc-contact">${esc(P.contact)}</div></div><button class="btn" type="button" id="copyContact">${esc(T.copy)}</button></div>`:""}
-    <div class="disclaimer">${esc(T.disc)}</div>
+function rateLine(from,to,r){return r>=1?`1 ${SYM[from]} = ${sig(r)} ${SYM[to]}`:`${sig(1/r)} ${SYM[from]} = 1 ${SYM[to]}`}
+
+// Coin mascots: little coins with faces that bob, blink, say hello and jump when tapped.
+let coinSeq=0;
+function coin(cur,size,flat){
+  const id="cg"+(++coinSeq),pal=cur==="KZT"?["#e8fbff","#58cbe8","#0a7fb0","#06557a"]:cur==="USD"?["#f3efff","#a897ff","#6a50d8","#45309c"]:["#fff6cf","#ffd45a","#e09a00","#9a6400"];
+  return `<svg class="coin" viewBox="${flat?"9 7 102 102":"0 0 120 120"}" width="${size||120}" height="${size||120}" aria-hidden="true">
+    <defs><radialGradient id="${id}" cx=".34" cy=".28" r=".85"><stop offset="0" stop-color="${pal[0]}"/><stop offset=".5" stop-color="${pal[1]}"/><stop offset="1" stop-color="${pal[2]}"/></radialGradient></defs>
+    ${flat?"":'<ellipse cx="60" cy="114" rx="34" ry="5" fill="#000" opacity=".25" class="shadow"/>'}
+    <circle cx="60" cy="58" r="50" fill="url(#${id})" stroke="${pal[3]}" stroke-width="3"/>
+    <circle cx="60" cy="58" r="41" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>
+    <path d="M30 34 q10 -14 26 -16" stroke="#fff" stroke-opacity=".8" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <text x="60" y="42" text-anchor="middle" font-family="Georgia,serif" font-size="20" font-weight="700" fill="${pal[3]}">${SYM[cur]}</text>
+    <g class="eyes" fill="#2a1d05"><ellipse cx="45" cy="60" rx="5.5" ry="7.5"/><ellipse cx="75" cy="60" rx="5.5" ry="7.5"/><circle cx="47" cy="57" r="2" fill="#fff"/><circle cx="77" cy="57" r="2" fill="#fff"/></g>
+    <ellipse cx="35" cy="73" rx="7" ry="4" fill="#ff7b8a" opacity=".55"/><ellipse cx="85" cy="73" rx="7" ry="4" fill="#ff7b8a" opacity=".55"/>
+    <path d="M51 74 q9 10 18 0" stroke="#2a1d05" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+  </svg>`;
+}
+// A real 3D coin: front face, back face and a stack of rim layers that give it thickness.
+function coin3d(cur,size){
+  const rim=cur==="KZT"?["#0a7fb0","#06557a"]:cur==="USD"?["#6a50d8","#45309c"]:["#e09a00","#9a6400"];
+  let edge="";for(let k=0;k<12;k++)edge+=`<i style="--z:${k}"></i>`;
+  return `<div class="c3d" style="--s:${size}px;--rim1:${rim[0]};--rim2:${rim[1]}"><div class="c3d-in">
+    <div class="face front">${coin(cur,size,true)}</div>${edge}
+    <div class="face back"><svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><circle cx="50" cy="50" r="49" fill="${rim[0]}"/><circle cx="50" cy="50" r="41" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2" stroke-dasharray="2 5"/><text x="50" y="62" text-anchor="middle" font-family="Georgia,serif" font-size="36" font-weight="700" fill="#fff">${SYM[cur]}</text></svg></div>
+  </div></div>`;
+}
+function scene(T){
+  return `<div class="scene" aria-hidden="true">
+    <div class="stage">
+      <div class="spot"></div>
+      <div class="podium"><div class="podium-top"></div></div>
+      <div class="pair3d">
+        <div class="buddy a" data-coin><span class="bubble">${esc(T.hello[0])}</span>${coin3d("CNY",136)}</div>
+        <div class="swap3d"><span>⇄</span></div>
+        <div class="buddy b" data-coin><span class="bubble">${esc(T.hello[1])}</span>${coin3d("KZT",136)}</div>
+      </div>
+    </div>
   </div>`;
 }
+function rateCard(p,T,i){
+  const nm=NAMES[S.lang]||NAMES.zh,feat=p.b==="CNY"&&p.q==="KZT",bu=qBuy(p),se=qSell(p);
+  const exB=p.b==="USD"?100:10000,exQ=p.q==="KZT"?100000:1000;
+  const half=(from,to,r,amt,cls)=>`<div class="dir ${cls}"><div class="dirhead"><span class="mini">${SYM[from]}</span><i>→</i><span class="mini">${SYM[to]}</span><b>${esc(T.dir(from,to))}</b></div>
+    <div class="big"><span class="countup" data-v="${r>=1?r:1/r}">${sig(r>=1?r:1/r)}</span></div>
+    <div class="unit">${r>=1?`1 ${SYM[from]} = ${sig(r)} ${SYM[to]}`:`${sig(1/r)} ${SYM[from]} = 1 ${SYM[to]}`}</div>
+    <div class="ex">${esc(T.example)} <b>${fmt(amt,from)}</b> → <b>${fmt(amt*r,to)}</b></div></div>`;
+  return `<article class="rcard tilt${feat?" feat":""}">
+    <header><span class="pairtag">${nm[p.b]} ⇄ ${nm[p.q]}</span>${feat?'<span class="hot">🔥 '+(S.lang==="ru"?"популярно":"热门")+'</span>':""}</header>
+    <div class="dirs">${half(p.b,p.q,bu,exB,"d1")}${half(p.q,p.b,1/se,exQ,"d2")}</div>
+  </article>`;
+}
+function publicPage(P,preview){
+  const T=L[S.lang]||L.zh,ps=normPairs(P.pairs).filter(p=>p.on&&qBuy(p)>0&&qSell(p)>0),ok=P.published&&ps.length;
+  coinSeq=0;
+  return `${preview?`<div class="preview-bar"><div class="wrap"><span>${esc(T.preview)}</span><button class="btn" type="button" id="exitPreview">${esc(T.back)}</button></div></div>`:""}
+  <header class="pnav"><div class="wrap pnav-in">
+    <div class="brand"><span class="mark">${coin("CNY",34)}</span><div><b>${esc(P.company||"Boli")}</b><small>${esc(T.brandSub)}</small></div></div>
+    <div class="ctrls"><div class="langs">${[["zh","中文"],["ru","Рус"]].map(([k,l])=>`<button type="button" data-lang="${k}" aria-pressed="${S.lang===k}">${l}</button>`).join("")}</div>
+    ${preview?"":`<button class="loginbtn" type="button" id="openLogin">${ICON.key}<span>${S.lang==="ru"?"内部管理登录 · "+T.login:"内部管理登录"}</span></button>`}</div>
+  </div></header>
+  <section class="phero"><div class="wrap phero-in">
+    <div class="copy">
+      <span class="eyebrow-pill"><i></i>${esc(T.eyebrow)}</span>
+      <h1><span class="goldtext">${esc(T.h1a)}</span><br>${esc(T.h1b)}</h1>
+      <p>${esc(T.sub)}</p>
+      <div class="ctrls"><a class="btn gold big-cta" href="#book">${esc(T.cta)} <span class="wiggle">💱</span></a><a class="btn ghost-light" href="#rates">${esc(T.ctaRates)}</a></div>
+      ${ok?`<span class="stamp"><i></i>${esc(T.upd)} ${esc(P.updated)}</span>`:""}
+    </div>
+    ${scene(T)}
+  </div></section>
+  <main class="pbody wrap">
+    <section id="rates" class="psec"><div class="sechead"><h2>${esc(T.board)}</h2><p>${esc(T.boardSub)}</p></div>
+      ${ok?`<div class="rates">${ps.map((p,i)=>rateCard(p,T,i)).join("")}</div>`:`<div class="glass emptystate"><div class="sleepy">${coin3d("CNY",90)}<span>💤</span></div><p>${esc(T.none)}</p></div>`}
+    </section>
+    <section class="psec"><div class="sechead"><h2>${esc(T.steps)}</h2></div>
+      <div class="steps">${T.s.map(([e,h,t],i)=>`<div class="step glass tilt"><span class="emo">${e}</span><span class="no">0${i+1}</span><b>${esc(h)}</b><p>${esc(t)}</p></div>`).join("")}</div>
+    </section>
+    ${ok?`<section id="book" class="psec">${orderSection(P,T,preview)}</section>`:""}
+    <section class="psec">${myOrdersSection(T)}</section>
+    ${P.notice?`<div class="notice glass">📌 ${esc(P.notice)}</div>`:""}
+    ${P.contact?`<div class="glass contact"><div><div class="eyebrow">${esc(T.contact)}</div><div class="val" id="pc-contact">${esc(P.contact)}</div></div><button class="btn ghost-light" type="button" id="copyContact">${esc(T.copy)}</button></div>`:""}
+    <div class="disclaimer">${esc(T.disc)}</div>
+  </main>`;
+}
 function orderSection(P,T,preview){
-  if(OF.result){const R=OF.result;return `<div class="card okpanel"><div class="okmark">✓</div><h2 style="margin:0">${esc(T.ok)}</h2>
-    <div class="okcode"><small>${esc(T.code)}</small><b class="num" id="okcode">${esc(R.code)}</b><button class="btn" type="button" id="copyCode">${esc(T.copy)}</button></div>
-    <div class="conv-out"><div><span>${esc(T.pay)}</span><b>${fmt(num(OF.amount),OF.from)}</b></div><div><span>${esc(T.youGet)}</span><b>${fmt(num(R.to_amount),OF.to)}</b></div></div>
-    <p style="margin:0;color:var(--muted)">${esc(T.keep)}</p><button class="btn" type="button" id="orderAgain">${esc(T.again)}</button></div>`}
-  const opts=c=>CURS.map(x=>`<option value="${x}"${x===c?" selected":""}>${x} · ${esc(T.names[x])}</option>`).join("");
-  return `<form class="card orderform" id="orderForm" novalidate>
-    <div><h2 style="margin:0 0 4px">${esc(T.order)}</h2><p style="margin:0;color:var(--muted);font-size:13px">${esc(T.orderSub)}</p></div>
+  const nm=NAMES[S.lang]||NAMES.zh;
+  if(OF.result){const R=OF.result;return `<div class="glass okpanel">
+    <div class="highfive">${coin3d(OF.from,76)}<span class="party">🎉</span>${coin3d(OF.to,76)}</div>
+    <h2>${esc(T.ok)}</h2>
+    <div class="okcode"><small>${esc(T.code)}</small><b id="okcode">${esc(R.code)}</b><button class="btn ghost-light" type="button" id="copyCode">${esc(T.copy)}</button></div>
+    <div class="conv-out"><div><span>${esc(T.youPay)}</span><b>${fmt(num(OF.amount),OF.from)}</b></div><div><span>${esc(T.youGet)}</span><b>${fmt(num(R.to_amount),OF.to)}</b></div></div>
+    <p>${esc(T.keep)}</p><button class="btn ghost-light" type="button" id="orderAgain">${esc(T.again)}</button></div>`}
+  const quick=[["CNY","KZT"],["KZT","CNY"]];
+  const opts=c=>CURS.map(x=>`<option value="${x}"${x===c?" selected":""}>${SYM[x]} ${x} · ${esc(nm[x])}</option>`).join("");
+  return `<form class="glass orderform" id="orderForm" novalidate>
+    <div class="formhead"><div><h2>${esc(T.order)}</h2><p>${esc(T.orderSub)}</p></div><div class="peek">${coin3d(OF.from,58)}</div></div>
+    <div class="quick">${quick.map(([a,b])=>`<button type="button" class="qdir" data-qf="${a}" data-qt="${b}" aria-pressed="${OF.from===a&&OF.to===b}"><span>${SYM[a]}</span>→<span>${SYM[b]}</span> ${esc(T.dir(a,b))}</button>`).join("")}</div>
     <div class="swaprow">
       <div class="field"><label for="of-amount">${esc(T.pay)}</label><div class="conv-row"><input id="of-amount" inputmode="decimal" value="${esc(OF.amount)}" aria-label="${esc(T.amount)}"><select id="of-from" aria-label="${esc(T.pay)}">${opts(OF.from)}</select></div></div>
       <button class="swapbtn" type="button" id="of-swap" aria-label="swap">⇅</button>
@@ -587,13 +692,13 @@ function orderSection(P,T,preview){
       <div class="field full"><label for="of-note">${esc(T.note)}</label><input id="of-note" value="${esc(OF.note)}"></div>
     </div>
     <div class="err" id="of-err" ${OF.err?"":"hidden"}>${esc(OF.err)}</div>
-    <button class="btn gold big" type="submit" id="of-submit" ${OF.sending||preview?"disabled":""}>${esc(OF.sending?T.sending:T.submit)}</button>
+    <button class="btn gold big" type="submit" id="of-submit" ${OF.sending||preview?"disabled":""}>${esc(OF.sending?T.sending:T.submit)} ✨</button>
   </form>`;
 }
 function myOrdersSection(T){
-  return `<div class="card lookup"><h2 style="margin:0">${esc(MY.length?T.my:T.lookup)}</h2>
-    ${MY.length?`<div class="mylist">${MY.slice(0,8).map(c=>{const s=myStatus.get(c);return `<div class="myrow"><span class="num">#${esc(c)}</span>${s?`<span>${fmt(num(s.amount),s.from_cur)} → ${fmt(num(s.to_amount),s.to_cur)}</span><span class="chip ost-${esc(s.status)}">${esc(T.st[s.status]||s.status)}</span>`:"<span></span><span></span>"}${s&&s.admin_note?`<div class="myreply">${esc(T.reply)}：${esc(s.admin_note)}</div>`:""}</div>`}).join("")}</div>`:""}
-    <form class="conv-row" id="lookupForm"><input id="lk-code" placeholder="${esc(T.lookupPh)}" autocomplete="off" style="font-size:18px"><button class="btn" type="submit">${esc(T.check)}</button></form>
+  return `<div class="glass lookup"><h2>🔎 ${esc(MY.length?T.my:T.lookup)}</h2>
+    ${MY.length?`<div class="mylist">${MY.slice(0,8).map(c=>{const s=myStatus.get(c);return `<div class="myrow"><span class="num">#${esc(c)}</span>${s?`<span>${fmt(num(s.amount),s.from_cur)} → ${fmt(num(s.to_amount),s.to_cur)}</span><span class="chip ost-${esc(s.status)}">${esc(T.st[s.status]||s.status)}</span>`:"<span></span><span></span>"}${s&&s.admin_note?`<div class="myreply">💬 ${esc(T.reply)}：${esc(s.admin_note)}</div>`:""}</div>`}).join("")}</div>`:""}
+    <form class="conv-row" id="lookupForm"><input id="lk-code" placeholder="${esc(T.lookupPh)}" autocomplete="off"><button class="btn ghost-light" type="submit">${esc(T.check)}</button></form>
     <div id="lk-out"></div></div>`;
 }
 async function refreshMyOrders(){
@@ -604,7 +709,8 @@ async function refreshMyOrders(){
 function updateQuote(){
   const box=$("#of-quote");if(!box)return;const T=L[S.lang]||L.zh,P=S.preview?previewPub():PUB;
   const r=pubRate(P,OF.from,OF.to),amt=num(OF.amount);
-  box.innerHTML=OF.from===OF.to?`<span>${esc(T.err.bad_currency)}</span>`:r?`<span>${esc(T.youGet)}</span><b class="num">${fmt(amt*r,OF.to)}</b><small>${esc(T.rate)} 1 ${OF.from} = ${sig(r)} ${OF.to}</small>`:`<span>${esc(T.noconv)}</span>`;
+  box.innerHTML=OF.from===OF.to?`<span>${esc(T.err.bad_currency)}</span>`:r?`<span>${esc(T.estimate)}</span><b>${fmt(amt*r,OF.to)}</b><small>${esc(T.rate)} ${rateLine(OF.from,OF.to,r)}</small>`:`<span>${esc(T.noconv)}</span>`;
+  document.querySelectorAll(".qdir").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.qf===OF.from&&b.dataset.qt===OF.to)));
 }
 function readOF(){const g=id=>{const el=$("#"+id);return el?el.value:""};
   if(!$("#orderForm"))return;OF.amount=g("of-amount");OF.from=g("of-from");OF.to=g("of-to");OF.name=g("of-name");OF.phone=g("of-phone");OF.method=+g("of-method")||0;OF.date=g("of-date");OF.note=g("of-note")}
@@ -620,18 +726,47 @@ async function submitOrder(){
     const d=await q(sb.rpc("place_order",{p:{from:OF.from,to:OF.to,amount:num(OF.amount),name:OF.name.trim(),phone:OF.phone.trim(),method:T.methods[OF.method],date:OF.date,note:OF.note.trim(),lang:S.lang}}));
     OF.result=d;OF.sending=false;MY=[d.code,...MY.filter(c=>c!==d.code)].slice(0,20);lsSet("boli-myorders",JSON.stringify(MY));
     myStatus.set(d.code,{code:d.code,status:"new",from_cur:OF.from,to_cur:OF.to,amount:num(OF.amount),to_amount:d.to_amount});
-    render();window.scrollTo({top:document.querySelector(".okpanel")?.offsetTop-20||0,behavior:"smooth"});
+    render();const okp=document.querySelector(".okpanel");if(okp)okp.scrollIntoView({behavior:"smooth",block:"center"});
   }catch(e){OF.sending=false;const key=Object.keys(T.err).find(k=>(e.message||"").includes(k));OF.err=T.err[key]||T.err.fail;render()}
 }
+const reduceMotion=()=>window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(){
+  if(reduceMotion())return;
+  document.querySelectorAll(".countup").forEach(el=>{const v=num(el.dataset.v);if(!v)return;const t0=performance.now(),dur=1100;
+    const step=t=>{const k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3);el.textContent=sig(v*e);if(k<1)requestAnimationFrame(step);else el.textContent=sig(v)};requestAnimationFrame(step)});
+}
+let helloTimer=null;
+// 3D tilt that follows the mouse (touch screens keep the resting angle so scrolling stays smooth)
+function bindTilt(){
+  if(reduceMotion())return;
+  const sc=document.querySelector(".scene");
+  if(sc){sc.onpointermove=e=>{if(e.pointerType!=="mouse")return;const r=sc.getBoundingClientRect(),dx=(e.clientX-r.left)/r.width-.5,dy=(e.clientY-r.top)/r.height-.5;
+      sc.querySelectorAll(".pair3d .c3d").forEach(c=>{c.style.setProperty("--ry",(-18+dx*50).toFixed(1)+"deg");c.style.setProperty("--rx",(10-dy*30).toFixed(1)+"deg")})};
+    sc.onpointerleave=()=>sc.querySelectorAll(".pair3d .c3d").forEach(c=>{c.style.removeProperty("--ry");c.style.removeProperty("--rx")})}
+  document.querySelectorAll(".tilt").forEach(el=>{
+    el.onpointermove=e=>{if(e.pointerType!=="mouse")return;const r=el.getBoundingClientRect(),dx=(e.clientX-r.left)/r.width-.5,dy=(e.clientY-r.top)/r.height-.5;
+      el.style.setProperty("--tx",(-dy*8).toFixed(2)+"deg");el.style.setProperty("--ty",(dx*10).toFixed(2)+"deg");el.style.setProperty("--gx",((dx+.5)*100).toFixed(0)+"%");el.style.setProperty("--gy",((dy+.5)*100).toFixed(0)+"%");el.classList.add("tilting")};
+    el.onpointerleave=()=>{el.style.removeProperty("--tx");el.style.removeProperty("--ty");el.classList.remove("tilting")};
+  });
+}
 function bindPublic(){
+  document.body.classList.add("is-pub");
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{readOF();S.lang=b.dataset.lang;savePrefs();render()});
   const cc=$("#copyContact");if(cc)cc.onclick=()=>copyText((S.preview?getDraft():PUB).contact||"",$("#pc-contact"));
-  const ex=$("#exitPreview");if(ex)ex.onclick=()=>{S.preview=false;shellRole=null;render();window.scrollTo({top:0})};
+  const ex=$("#exitPreview");if(ex)ex.onclick=()=>{S.preview=false;shellRole=null;document.body.classList.remove("is-pub");render();window.scrollTo({top:0})};
+  const ol=$("#openLogin");if(ol)ol.onclick=()=>{S.showLogin=true;S.loginErr="";render()};
+  // tap a coin buddy: it jumps and a little heart floats up
+  document.querySelectorAll("[data-coin]").forEach(c=>c.onclick=()=>{const k=c.querySelector(".c3d-in");if(k)k.classList.toggle("flipped")});
+  bindTilt();
+  // the buddies take turns saying hello
+  clearInterval(helloTimer);const T=L[S.lang]||L.zh;let n=0;
+  helloTimer=setInterval(()=>{const bs=document.querySelectorAll(".buddy .bubble");if(!bs.length){clearInterval(helloTimer);return}n++;bs[n%2].textContent=T.hello[n%T.hello.length]},3000);
   const f=$("#orderForm");
   if(f){
     f.oninput=()=>{readOF();updateQuote()};f.onchange=()=>{readOF();updateQuote()};
     f.onsubmit=e=>{e.preventDefault();if(!S.preview)submitOrder()};
-    $("#of-swap").onclick=()=>{readOF();[OF.from,OF.to]=[OF.to,OF.from];render()};
+    $("#of-swap").onclick=()=>{readOF();[OF.from,OF.to]=[OF.to,OF.from];render();$("#of-amount")?.focus()};
+    document.querySelectorAll(".qdir").forEach(b=>b.onclick=()=>{readOF();OF.from=b.dataset.qf;OF.to=b.dataset.qt;render()});
     updateQuote();
   }
   const cp=$("#copyCode");if(cp)cp.onclick=()=>copyText(OF.result.code,$("#okcode"));
@@ -639,9 +774,10 @@ function bindPublic(){
   const lf=$("#lookupForm");if(lf)lf.onsubmit=async e=>{e.preventDefault();const T=L[S.lang]||L.zh,code=$("#lk-code").value.trim().toUpperCase(),out=$("#lk-out");if(!code)return;
     if(!sb){out.textContent=T.notfound;return}
     try{const d=await q(sb.rpc("order_status",{p_code:code}));
-      if(!d){out.innerHTML=`<div class="empty-note">${esc(T.notfound)}</div>`;return}
+      if(!d){out.innerHTML=`<div class="empty-note">🤔 ${esc(T.notfound)}</div>`;return}
       myStatus.set(d.code,d);if(!MY.includes(d.code)){MY=[d.code,...MY].slice(0,20);lsSet("boli-myorders",JSON.stringify(MY))}render();
     }catch(err){out.innerHTML=`<div class="empty-note">${esc(T.err.fail)}</div>`}};
+  if(!bindPublic.counted){bindPublic.counted=true;countUp()}
 }
 
 /* ---------- transaction form ---------- */
@@ -656,18 +792,17 @@ function drawTx(){
   const t=F,isFx=t.type==="fx",cats=CATS[t.type];
   $("#modal").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="txForm" novalidate>
     <h3>${t.id?"编辑记录":t.orderId?"订单记账":"记一笔"}<button class="btn ghost" type="button" data-close aria-label="关闭">✕</button></h3>
-    ${t.orderId?'<div class="banner info" style="margin:0"><b>换汇订单</b>我们付出客户要的币种，收进客户付的币种。可以按实际成交修改金额。</div>':""}
+    ${t.orderId?'<div class="banner info" style="margin:0"><b>网站订单记账</b>已按订单填好，可以按实际成交修改本单汇率或金额。</div>':""}
     <div class="typeseg">${[["in","进账"],["out","出账"],["fx","换汇"]].map(([k,l])=>`<button type="button" data-t="${k}" aria-pressed="${t.type===k}">${l}</button>`).join("")}</div>
     <div class="fgrid">
       <div class="field"><label for="tx-date">日期</label><input type="date" id="tx-date" value="${esc(t.date)}" required></div>
-      <div class="field"><label for="tx-client">客户 / 对方</label><input id="tx-client" list="clientList" value="${esc(t.client)}" placeholder="例如 Astana Trade TOO"><datalist id="clientList">${clientNames().map(n=>`<option value="${esc(n)}"></option>`).join("")}</datalist></div>
-      <div class="field full"><label>${isFx?"我们付出的币种":"币种"}</label><div class="curseg" id="tx-cur">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${t.currency===c}"><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}</div></div>
-      <div class="field"><label for="tx-amount">${isFx?"付出金额":"金额"}（${SYM[t.currency]}）</label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0" required></div>
-      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>
-      ${isFx?`<div class="field full"><label>我们收进的币种</label><div class="curseg" id="tx-tocur">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${t.toCurrency===c}" ${c===t.currency?"disabled":""}><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}</div></div>
-      <div class="field full"><label for="tx-toAmount">收进金额（${SYM[t.toCurrency]}）</label><input id="tx-toAmount" class="big" inputmode="decimal" value="${esc(t.toAmount)}" placeholder="0"></div>`:""}
-      <div class="field"><label for="tx-rcny">本笔汇率 1 USD = CNY</label><input id="tx-rcny" inputmode="decimal" value="${esc(t.rates.CNY)}"></div>
-      <div class="field"><label for="tx-rkzt">本笔汇率 1 USD = KZT</label><input id="tx-rkzt" inputmode="decimal" value="${esc(t.rates.KZT)}"></div>
+      <div class="field"><label>客户 / 对方</label><button type="button" class="pickfield${t.client?"":" empty"}" id="tx-client-btn">${t.client?esc(t.client):"点这里选择或添加客户"}<span>▾</span></button><input type="hidden" id="tx-client" value="${esc(t.client)}"></div>
+      <div class="picker full" id="picker" hidden><input id="pk-q" placeholder="搜索客户，或输入新客户的名字" autocomplete="off"><div class="pk-list" id="pk-list"></div></div>
+      ${isFx?fxFields(t):`<div class="field full"><label>币种</label><div class="curseg" id="tx-cur">${curBtns(t.currency)}</div></div>
+      <div class="field"><label for="tx-amount">金额（${SYM[t.currency]}）</label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0" required></div>
+      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>`}
+      <div class="field"><label for="tx-rcny">${isFx?"成本":"本笔"}汇率 1 USD = CNY</label><input id="tx-rcny" inputmode="decimal" value="${esc(t.rates.CNY)}"></div>
+      <div class="field"><label for="tx-rkzt">${isFx?"成本":"本笔"}汇率 1 USD = KZT</label><input id="tx-rkzt" inputmode="decimal" value="${esc(t.rates.KZT)}"></div>
       <div class="full calc" id="tx-calc"></div>
       ${isFx?"":`<div class="field"><label for="tx-cat">类别</label><select id="tx-cat">${[...new Set([...cats,t.category].filter(Boolean))].map(c=>`<option${c===t.category?" selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div class="field"><label for="tx-status">状态</label><select id="tx-status"><option value="done"${t.status!=="pending"?" selected":""}>已结清</option><option value="pending"${t.status==="pending"?" selected":""}>${t.type==="in"?"待收款（应收）":"待付款（应付）"}</option></select></div>`}
@@ -680,18 +815,41 @@ function drawTx(){
   </form></div>`;
   calcTx();
 }
+// ---- helpers for the exchange (换汇) form ----
+function curBtns(sel,disabled){return CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${sel===c}" ${c===disabled?"disabled":""}><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}
+// show a deal rate the way people say it: "1 CNY = 71.2 KZT", never "1 KZT = 0.014 CNY"
+function dealPair(a,b){return crossRate(S.settings.rates,a,b)>=1?{b:a,q:b}:{b:b,q:a}}
+function dealToFactor(recv,pay,deal){const p=dealPair(recv,pay);return p.b===recv?deal:(deal?1/deal:0)}  // recv amount × factor = pay amount
+function factorToDeal(recv,pay,f){const p=dealPair(recv,pay);return p.b===recv?f:(f?1/f:0)}
+function siteDeal(recv,pay){const f=pubRate(PUB,recv,pay);return f?plain(factorToDeal(recv,pay,f)):""}
+function fxFields(t){
+  const p=dealPair(t.toCurrency,t.currency),site=siteDeal(t.toCurrency,t.currency);
+  return `<div class="field full"><label>客户给我们（收进）</label><div class="curseg" id="tx-tocur">${curBtns(t.toCurrency)}</div></div>
+      <div class="field"><label for="tx-toAmount">收进金额（${SYM[t.toCurrency]}）</label><input id="tx-toAmount" class="big" inputmode="decimal" value="${esc(t.toAmount)}" placeholder="0"></div>
+      <div class="field"><label for="tx-deal">本单汇率 · 1 ${p.b} = ? ${p.q}<small>${site?"网站报价 "+site+"，可以按这单实际成交改":"这单和客户谈好的汇率"}</small></label><input id="tx-deal" class="big" inputmode="decimal" value="${esc(t.dealRate||site)}" placeholder="${esc(site||sig(crossRate(S.settings.rates,p.b,p.q)))}"></div>
+      <div class="field full"><label>我们给客户（付出）</label><div class="curseg" id="tx-cur">${curBtns(t.currency,t.toCurrency)}</div></div>
+      <div class="field"><label for="tx-amount">付出金额（${SYM[t.currency]}）<small>按本单汇率自动算，也可以直接改</small></label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0"></div>
+      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>`;
+}
+function fxAuto(id){
+  if(!F||F.type!=="fx")return;const g=x=>$("#"+x);
+  const recv=num(g("tx-toAmount").value),deal=num(g("tx-deal").value),pay=num(g("tx-amount").value);
+  if(id==="tx-toAmount"||id==="tx-deal"){const f=dealToFactor(F.toCurrency,F.currency,deal);if(recv&&f)g("tx-amount").value=plainAmt(recv*f,F.currency)}
+  else if(id==="tx-amount"&&recv&&pay){g("tx-deal").value=plain(factorToDeal(F.toCurrency,F.currency,pay/recv))}
+}
+function plainAmt(v,c){return String(+v.toFixed(c==="KZT"?0:2))}
 function readTx(){
   const g=id=>{const el=$("#"+id);return el?el.value:""};
   F.date=g("tx-date");F.client=g("tx-client").trim();F.amount=g("tx-amount");F.fee=g("tx-fee");F.rates={CNY:g("tx-rcny"),KZT:g("tx-rkzt")};
-  if(F.type==="fx"){F.toAmount=g("tx-toAmount");F.category="换汇";F.status="done"}else{F.category=g("tx-cat");F.status=g("tx-status")}
+  if(F.type==="fx"){F.toAmount=g("tx-toAmount");F.dealRate=g("tx-deal");F.category="换汇";F.status="done"}else{F.category=g("tx-cat");F.status=g("tx-status")}
   F.ref=g("tx-ref");F.note=g("tx-note");
 }
 function calcTx(){
   readTx();const t=F,r={CNY:num(t.rates.CNY),KZT:num(t.rates.KZT)},a=num(t.amount),f=num(t.fee);
   let h=`<div class="r"><span>交叉汇率</span><b>1 CNY = ${r.CNY?rfmt(r.KZT/r.CNY,3):"—"} KZT</b></div>`;
   if(t.type==="fx"){
-    const got=num(t.toAmount),book=conv(a+f,t.currency,t.toCurrency,r),impl=got?a/got:0;
-    h+=`<div class="r"><span>成交汇率</span><b>1 ${t.toCurrency} = ${sig(impl)} ${t.currency}</b></div><div class="r"><span>按本笔汇率，付出值</span><b>${fmt(book,t.toCurrency)}</b></div>
+    const got=num(t.toAmount),book=conv(a+f,t.currency,t.toCurrency,r),p=dealPair(t.toCurrency,t.currency),dr=got&&a?factorToDeal(t.toCurrency,t.currency,a/got):0;
+    h+=`<div class="r"><span>本单成交</span><b>收 ${fmt(got,t.toCurrency)} · 付 ${fmt(a,t.currency)}</b></div><div class="r"><span>本单汇率</span><b>1 ${p.b} = ${dr?sig(dr):"—"} ${p.q}</b></div><div class="r"><span>按成本汇率，付出值</span><b>${fmt(book,t.toCurrency)}</b></div>
        <div class="r hl"><span>这笔换汇利润（${CNAME[S.disp]}）</span><b class="${got-book<0?"neg":"pos"}">${fmt(conv(got-book,t.toCurrency,S.disp,r),S.disp,{plus:true})}</b></div>`;
   }else{
     const net=t.type==="in"?a-f:a+f;
@@ -706,7 +864,8 @@ async function submitTx(){
   readTx();const e=validTx(),el=$("#tx-err");if(e){el.textContent=e;el.hidden=false;return}
   const t=F,after=t._after,out={date:t.date,type:t.type,client:t.client,currency:t.currency,amount:num(t.amount),fee:num(t.fee),rates:{CNY:num(t.rates.CNY),KZT:num(t.rates.KZT)},
     category:t.category||"",status:t.status||"done",ref:t.ref||"",note:t.note||"",createdAt:t.createdAt||Date.now(),updatedAt:Date.now()};
-  if(t.type==="fx"){out.toCurrency=t.toCurrency;out.toAmount=num(t.toAmount)}
+  if(t.type==="fx"){out.toCurrency=t.toCurrency;out.toAmount=num(t.toAmount);const p=dealPair(t.toCurrency,t.currency),a=num(t.amount),g=num(t.toAmount);
+    out.dealRate=g&&a?+factorToDeal(t.toCurrency,t.currency,a/g).toFixed(6):num(t.dealRate);out.dealBase=p.b;out.dealQuote=p.q}
   if(t.orderId)out.orderId=t.orderId;if(t.demo)out.demo=true;if(t.id)out.id=t.id;const wasEdit=!!t.id;
   closeModal();
   try{if(out.client&&!clientByName(out.client)&&!after)await saveClient({name:out.client,contact:"",country:"",note:"",createdAt:Date.now()});
@@ -732,6 +891,45 @@ function openClient(id){
       toast("已保存客户")}catch(err){}};
   const del=$("#cl-del");if(del)del.onclick=async()=>{if(!del.classList.contains("armed")){del.classList.add("armed");del.textContent="确认删除？账目会保留";return}
     closeModal();try{await delClient(id);toast("已删除客户")}catch(err){}};
+}
+/* ---------- client picker inside the transaction form ---------- */
+function renderPicker(qs){
+  const box=$("#pk-list");if(!box)return;const q=qs.trim().toLowerCase();
+  const names=clientNames(),count=n=>[...S.txns.values()].filter(t=>t.client===n).length;
+  const hit=names.filter(n=>!q||n.toLowerCase().includes(q)||(clientByName(n)?.contact||"").toLowerCase().includes(q));
+  const exact=names.some(n=>n.toLowerCase()===q);
+  box.innerHTML=(qs.trim()&&!exact?`<button type="button" class="pk-add" data-addnew="${esc(qs.trim())}">＋ 添加新客户「${esc(qs.trim())}」</button>`:"")+
+    hit.slice(0,60).map(n=>{const r=clientByName(n);return `<button type="button" class="pk-row" data-pick="${esc(n)}"><span class="avatar sm">${esc([...n][0]||"?")}</span><span class="pk-txt"><b>${esc(n)}</b><small>${esc([r?.contact,r?.country].filter(Boolean).join(" · ")||count(n)+" 笔记录")}</small></span>${F&&F.client===n?"<i>✓</i>":""}</button>`}).join("")+
+    (!names.length&&!q?'<div class="empty-note">还没有客户。在上面输入名字，就能添加第一位客户。</div>':"")+
+    (F&&F.client?'<button type="button" class="pk-row pk-none" data-pick="">不选客户</button>':"");
+}
+function pickClient(name){
+  if(!F)return;F.client=name;$("#tx-client").value=name;const b=$("#tx-client-btn");
+  b.innerHTML=(name?esc(name):"点这里选择或添加客户")+"<span>▾</span>";b.classList.toggle("empty",!name);$("#picker").hidden=true;
+}
+
+/* ---------- client profile: everything for one client in one place ---------- */
+function clientOrders(name){const r=clientByName(name),ph=(r?.contact||"").replace(/\s/g,"");
+  return [...S.orders.values()].filter(o=>o.name===name||(ph&&(o.phone||"").replace(/\s/g,"")===ph)).sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""))}
+function openClientDetail(name){
+  const rec=clientByName(name),D=S.disp,tx=allTx().filter(t=>t.client===name),T=totals(tx,D),ords=clientOrders(name);
+  $("#modal").innerHTML=`<div class="scrim" id="scrim"><div class="sheet wide">
+    <h3><span class="cdhead"><span class="avatar">${esc([...name][0]||"?")}</span><span><b>${esc(name)}</b><small>${esc([rec?.contact,rec?.country,rec?.note].filter(Boolean).join(" · ")||"客户档案")}</small></span></span><button class="btn ghost" type="button" data-close aria-label="关闭">✕</button></h3>
+    <div class="cdstats">
+      <div><small>进账</small><b class="pos">${fmt(T.inc,D)}</b></div><div><small>出账</small><b class="neg">${fmt(T.exp,D)}</b></div>
+      <div><small>利润（含换汇）</small><b>${fmt(T.profit,D)}</b></div><div><small>待收</small><b>${fmt(T.recv,D)}</b></div>
+      <div><small>账目 / 订单</small><b>${tx.length} / ${ords.length}</b></div>
+    </div>
+    <div class="ctrls"><button class="btn gold" type="button" id="cd-new">＋ 为TA记一笔</button>${rec?'<button class="btn" type="button" id="cd-edit">编辑资料</button>':'<button class="btn" type="button" id="cd-save">存为客户</button>'}${rec?.contact?`<button class="btn ghost" type="button" id="cd-copy">复制 ${esc(rec.contact)}</button>`:""}</div>
+    <div class="cdsec"><h4>账目 <span>${tx.length} 笔 · 全部期间</span></h4><div class="rows">${tx.length?tx.map(rowHTML).join(""):'<div class="empty-note">还没有账目。点「为TA记一笔」添加。</div>'}</div></div>
+    <div class="cdsec"><h4>网站订单 <span>${ords.length} 个</span></h4>${ords.length?`<div class="cdorders">${ords.map(o=>`<div class="cdord"><span class="chip ost-${esc(o.status)}">${ORDER_ST[o.status]||esc(o.status)}</span><span class="num">#${esc(o.code)}</span><span class="num">${fmt(num(o.amount),o.from_cur)} → ${fmt(num(o.to_amount),o.to_cur)}</span><span class="otime">${esc(fmtTime(o.created_at))}</span></div>`).join("")}</div>`:'<div class="empty-note">这位客户还没有在网站上下过单（按名字或电话匹配）。</div>'}</div>
+  </div></div>`;
+  const m=$("#modal");
+  m.querySelectorAll(".row[data-id]").forEach(r=>r.onclick=()=>openTx(r.dataset.id));
+  $("#cd-new").onclick=()=>openTx(null,{client:name});
+  const ed=$("#cd-edit");if(ed)ed.onclick=()=>openClient(rec.id);
+  const sv=$("#cd-save");if(sv)sv.onclick=async()=>{await saveClient({name,contact:"",country:"",note:"",createdAt:Date.now()}).catch(()=>{});openClientDetail(name)};
+  const cp=$("#cd-copy");if(cp)cp.onclick=()=>copyText(rec.contact,cp);
 }
 function closeModal(){const m=$("#modal");if(m)m.innerHTML="";F=null}
 
@@ -786,7 +984,7 @@ function bindShell(){
   $("#period").onchange=e=>{S.period=e.target.value;if(S.period==="custom"&&!S.from){S.from=new Date().getFullYear()+"-01-01";S.to=today();$("#from").value=S.from;$("#to").value=S.to}savePrefs();render()};
   $("#from").onchange=e=>{S.from=e.target.value;render()};$("#to").onchange=e=>{S.to=e.target.value;render()};
   $("#toPreview").onclick=()=>{readDraft();S.preview=true;render();window.scrollTo({top:0})};
-  $("#logout").onclick=async()=>{await sb.auth.signOut().catch(()=>{});S.role="login";S.txns.clear();S.orders.clear();S.clients.clear();render()};
+  $("#logout").onclick=async()=>{await sb.auth.signOut().catch(()=>{});toClient();await loadPublic();render()};
 }
 const noteTimers={};
 function bindView(){
@@ -800,6 +998,9 @@ function bindView(){
     m.querySelectorAll("[data-of]").forEach(b=>b.onclick=()=>{S.of=b.dataset.of;render()});
     m.querySelectorAll("[data-oact]").forEach(b=>b.onclick=()=>orderAction(b.closest("[data-oid]").dataset.oid,b.dataset.oact,b));
     m.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy,b));
+    m.querySelectorAll("[data-orate]").forEach(inp=>inp.oninput=()=>{const id=inp.dataset.orate;clearTimeout(noteTimers["r"+id]);
+      noteTimers["r"+id]=setTimeout(()=>{const o=S.orders.get(id),v=num(inp.value);if(!o||!(v>0))return;const f=dealToFactor(o.from_cur,o.to_cur,v),to=+(num(o.amount)*f).toFixed(2);
+        if(Math.abs(f-num(o.rate))<1e-12)return;updateOrder(id,{rate:+f.toFixed(10),to_amount:to}).then(()=>toast(`本单汇率已改，客户得 ${fmt(to,o.to_cur)}`)).catch(()=>{})},800)});
     m.querySelectorAll("[data-anote]").forEach(inp=>inp.oninput=()=>{const id=inp.dataset.anote;clearTimeout(noteTimers[id]);
       noteTimers[id]=setTimeout(()=>{const o=S.orders.get(id);if(o&&o.admin_note!==inp.value){o.admin_note=inp.value;track(q(sb.from("orders").update({admin_note:inp.value,updated_at:stamp()}).eq("id",id))).catch(()=>{})}},700)});
   }
@@ -814,14 +1015,15 @@ function bindView(){
   if(S.view==="clients"){
     const nc=$("#newClient");if(nc)nc.onclick=()=>openClient();
     m.querySelectorAll("[data-editclient]").forEach(b=>b.onclick=e=>{e.stopPropagation();openClient(b.dataset.editclient)});
-    m.querySelectorAll("[data-client]").forEach(c=>{const go=()=>{S.lf={q:"",type:"",cur:"",client:c.dataset.client,cat:"",status:""};setView("ledger")};c.onclick=go;c.onkeydown=e=>{if(e.key==="Enter")go()}});
+    m.querySelectorAll("[data-client]").forEach(c=>{const go=()=>openClientDetail(c.dataset.client);c.onclick=go;c.onkeydown=e=>{if(e.key==="Enter")go()}});
   }
   if(S.view==="rates"&&$("#r-cny")){
     ["r-cny","r-kzt","cv-amt","cv-from"].forEach(id=>{$("#"+id).oninput=updateRatesView});updateRatesView();
     $("#saveRates").onclick=async()=>{const c=num($("#r-cny").value),k=num($("#r-kzt").value);if(!(c>0&&k>0)){toast("汇率必须大于 0");return}
       readDraft();S.settings={...S.settings,rates:{CNY:c,KZT:k},updated:today()};try{await saveSetting("internal",S.settings);render();toast("内部汇率已保存")}catch(e){}};
-    m.querySelectorAll("[data-pr]").forEach(inp=>inp.oninput=()=>{const i=+inp.dataset.pr,p=getDraft().pairs[i];p.r=inp.value;const [sp,txt]=spreadTxt(p),el=m.querySelector(`[data-spread="${i}"]`);el.textContent=txt;el.className=sp>=0?"spread-pos":"spread-neg"});
-    $("#useInternal").onclick=()=>{readDraft();getDraft().pairs.forEach(p=>p.r=plain(internalPair(p.b,p.q)));render()};
+    m.querySelectorAll("[data-pp]").forEach(inp=>inp.oninput=()=>{readDraft();const i=+inp.dataset.pp;m.querySelector(`[data-spread="${i}"]`).innerHTML=spreadHTML(getDraft().pairs[i])});
+    $("#useInternal").onclick=()=>{readDraft();const k=Math.max(0,num($("#autoPct").value))/100;lsSet("boli-autopct",$("#autoPct").value);
+      getDraft().pairs.forEach(p=>{const ir=internalPair(p.b,p.q);p.buy=plain(ir*(1-k));p.sell=plain(ir*(1+k))});render();toast("已按内部汇率填好，检查后点「发布给客户」")};
     $("#previewPub").onclick=()=>{readDraft();S.preview=true;render();window.scrollTo({top:0})};
     $("#publishPub").onclick=e=>publishPub(e.currentTarget);
   }
@@ -832,14 +1034,17 @@ document.addEventListener("click",e=>{
   if(e.target.closest("[data-close]")||e.target.id==="scrim"){closeModal();return}
   if(!F)return;
   const ty=e.target.closest(".typeseg button");if(ty){readTx();F.type=ty.dataset.t;F.category=CATS[F.type][0];if(F.type==="fx"&&F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);drawTx();return}
-  const cu=e.target.closest("#tx-cur button");if(cu){readTx();F.currency=cu.dataset.c;if(F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);drawTx();return}
-  const tc=e.target.closest("#tx-tocur button");if(tc&&!tc.disabled){readTx();F.toCurrency=tc.dataset.c;drawTx();return}
+  const cu=e.target.closest("#tx-cur button");if(cu&&!cu.disabled){readTx();F.currency=cu.dataset.c;if(F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);if(F.type==="fx"){F.dealRate="";F.amount=""}drawTx();if(F.type==="fx")fxAuto("tx-deal"),calcTx();return}
+  const tc=e.target.closest("#tx-tocur button");if(tc){readTx();F.toCurrency=tc.dataset.c;if(F.currency===F.toCurrency)F.currency=CURS.find(c=>c!==F.toCurrency);F.dealRate="";F.amount="";drawTx();fxAuto("tx-deal");calcTx();return}
+  if(e.target.closest("#tx-client-btn")){const p=$("#picker");p.hidden=!p.hidden;if(!p.hidden){renderPicker("");$("#pk-q").value="";$("#pk-q").focus()}return}
+  const pk=e.target.closest("[data-pick]");if(pk){pickClient(pk.dataset.pick);return}
+  const an=e.target.closest("[data-addnew]");if(an){const name=an.dataset.addnew.trim();if(name){saveClient({name,contact:"",country:"",note:"",createdAt:Date.now()}).catch(()=>{});pickClient(name);toast("已添加新客户："+name)}return}
   if(e.target.id==="tx-del"){const b=e.target;if(!b.classList.contains("armed")){b.classList.add("armed");b.textContent="再点一次确认删除";return}const id=F.id;closeModal();delTxn(id).then(()=>toast("已删除")).catch(()=>{});return}
   if(e.target.id==="tx-dup"){readTx();const c={...F};delete c.id;delete c.demo;delete c.orderId;c.date=today();c.createdAt=Date.now();c._after=null;F=c;drawTx();toast("已复制，修改后保存");return}
 });
-document.addEventListener("input",e=>{if(F&&e.target.closest("#txForm"))calcTx()});
+document.addEventListener("input",e=>{if(!F||!e.target.closest("#txForm"))return;if(e.target.id==="pk-q"){renderPicker(e.target.value);return}fxAuto(e.target.id);calcTx()});
 document.addEventListener("submit",e=>{if(e.target.id==="txForm"){e.preventDefault();submitTx()}});
-document.addEventListener("keydown",e=>{const m=$("#modal");if(e.key==="Escape"&&m&&m.innerHTML)closeModal()});
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;const m=$("#modal");if(m&&m.innerHTML)closeModal();else if(S.showLogin){S.showLogin=false;S.loginErr="";render()}});
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(S.role==="owner"&&!S.preview&&VIEWS.some(v=>v[0]===h)&&h!==S.view){S.view=h;render()}});
 window.addEventListener("beforeunload",e=>{if(S.save.pending){e.preventDefault();e.returnValue=""}});
 

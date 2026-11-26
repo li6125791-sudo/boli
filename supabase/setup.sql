@@ -116,24 +116,27 @@ create policy settings_delete on public.settings for delete to authenticated
   using (public.is_admin());
 
 -- ---------- 汇率计算（服务器端，客户无法篡改） ----------
+-- 每个币种对 b/q 有两个方向的报价（都写成 1 b = ? q）：
+--   buy  = 客户用 b 换 q（我们买入 b）
+--   sell = 客户用 q 换 b（我们卖出 b）
+-- 旧数据只有 r 时，两个方向都用 r。
 create or replace function public._pair_rate(pairs jsonb, f text, t text) returns numeric
 language plpgsql immutable set search_path = public as $$
 declare r numeric;
 begin
-  select nullif(e ->> 'r', '')::numeric into r
+  select coalesce(nullif(e ->> 'buy', '')::numeric, nullif(e ->> 'r', '')::numeric) into r
     from jsonb_array_elements(pairs) e
    where e ->> 'b' = f and e ->> 'q' = t
      and coalesce((e ->> 'on')::boolean, true)
-     and coalesce(nullif(e ->> 'r', '')::numeric, 0) > 0
    limit 1;
-  if r is not null then return r; end if;
-  select 1 / nullif(e ->> 'r', '')::numeric into r
+  if r is not null and r > 0 then return r; end if;
+  select coalesce(nullif(e ->> 'sell', '')::numeric, nullif(e ->> 'r', '')::numeric) into r
     from jsonb_array_elements(pairs) e
    where e ->> 'b' = t and e ->> 'q' = f
      and coalesce((e ->> 'on')::boolean, true)
-     and coalesce(nullif(e ->> 'r', '')::numeric, 0) > 0
    limit 1;
-  return r;
+  if r is not null and r > 0 then return 1 / r; end if;
+  return null;
 end $$;
 
 create or replace function public.quote_rate(f text, t text) returns numeric
