@@ -241,7 +241,7 @@ function render(){
 function loginModal(){
   const em=lsGet("boli-email")||"";
   return `<div class="scrim" id="lscrim"><form class="sheet auth-card" id="loginForm" novalidate>
-    <div class="auth-top"><span class="authcoin">${coin("KZT",56)}</span><div><h3 style="margin:0">内部管理登录</h3><p>只有管理员能进入。客户请直接使用本页预约。</p></div><button class="btn ghost" type="button" data-lclose aria-label="关闭">✕</button></div>
+    <div class="auth-top"><span class="authcoin">${coin3d("KZT",56)}</span><div><h3 style="margin:0">内部管理登录</h3><p>只有管理员能进入。客户请直接使用本页预约。</p></div><button class="btn ghost" type="button" data-lclose aria-label="关闭">✕</button></div>
     ${configured()?`<div class="field"><label for="lg-email">邮箱</label><input id="lg-email" type="email" autocomplete="username" value="${esc(em)}" required></div>
     <div class="field"><label for="lg-pass">密码</label><input id="lg-pass" type="password" autocomplete="current-password" required></div>
     <div class="err" id="lg-err" ${S.loginErr?"":"hidden"}>${esc(S.loginErr||"")}</div>
@@ -583,11 +583,11 @@ function rateLine(from,to,r){return r>=1?`1 ${SYM[from]} = ${sig(r)} ${SYM[to]}`
 
 // Coin mascots: little coins with faces that bob, blink, say hello and jump when tapped.
 let coinSeq=0;
-function coin(cur,size){
+function coin(cur,size,flat){
   const id="cg"+(++coinSeq),pal=cur==="KZT"?["#e8fbff","#58cbe8","#0a7fb0","#06557a"]:cur==="USD"?["#f3efff","#a897ff","#6a50d8","#45309c"]:["#fff6cf","#ffd45a","#e09a00","#9a6400"];
-  return `<svg class="coin" viewBox="0 0 120 120" width="${size||120}" height="${size||120}" aria-hidden="true">
+  return `<svg class="coin" viewBox="${flat?"9 7 102 102":"0 0 120 120"}" width="${size||120}" height="${size||120}" aria-hidden="true">
     <defs><radialGradient id="${id}" cx=".34" cy=".28" r=".85"><stop offset="0" stop-color="${pal[0]}"/><stop offset=".5" stop-color="${pal[1]}"/><stop offset="1" stop-color="${pal[2]}"/></radialGradient></defs>
-    <ellipse cx="60" cy="114" rx="34" ry="5" fill="#000" opacity=".25" class="shadow"/>
+    ${flat?"":'<ellipse cx="60" cy="114" rx="34" ry="5" fill="#000" opacity=".25" class="shadow"/>'}
     <circle cx="60" cy="58" r="50" fill="url(#${id})" stroke="${pal[3]}" stroke-width="3"/>
     <circle cx="60" cy="58" r="41" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>
     <path d="M30 34 q10 -14 26 -16" stroke="#fff" stroke-opacity=".8" stroke-width="5" fill="none" stroke-linecap="round"/>
@@ -597,13 +597,26 @@ function coin(cur,size){
     <path d="M51 74 q9 10 18 0" stroke="#2a1d05" stroke-width="3.2" fill="none" stroke-linecap="round"/>
   </svg>`;
 }
+// A real 3D coin: front face, back face and a stack of rim layers that give it thickness.
+function coin3d(cur,size){
+  const rim=cur==="KZT"?["#0a7fb0","#06557a"]:cur==="USD"?["#6a50d8","#45309c"]:["#e09a00","#9a6400"];
+  let edge="";for(let k=0;k<12;k++)edge+=`<i style="--z:${k}"></i>`;
+  return `<div class="c3d" style="--s:${size}px;--rim1:${rim[0]};--rim2:${rim[1]}"><div class="c3d-in">
+    <div class="face front">${coin(cur,size,true)}</div>${edge}
+    <div class="face back"><svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><circle cx="50" cy="50" r="49" fill="${rim[0]}"/><circle cx="50" cy="50" r="41" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2" stroke-dasharray="2 5"/><text x="50" y="62" text-anchor="middle" font-family="Georgia,serif" font-size="36" font-weight="700" fill="#fff">${SYM[cur]}</text></svg></div>
+  </div></div>`;
+}
 function scene(T){
   return `<div class="scene" aria-hidden="true">
-    <div class="halo"></div>
-    <div class="buddy a" data-coin><span class="bubble">${esc(T.hello[0])}</span>${coin("CNY",128)}</div>
-    <div class="swapper"><svg viewBox="0 0 80 40" width="80" height="40"><path class="arc1" d="M6 16 Q40 -6 74 16" fill="none" stroke="url(#arcg)" stroke-width="3" stroke-linecap="round"/><path class="arc2" d="M74 24 Q40 46 6 24" fill="none" stroke="url(#arcg)" stroke-width="3" stroke-linecap="round"/><path d="M66 9 74 16 65 20M14 31 6 24 15 20" fill="none" stroke="#f3d98f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="arcg"><stop offset="0" stop-color="#f3d98f" stop-opacity=".2"/><stop offset=".5" stop-color="#f3d98f"/><stop offset="1" stop-color="#f3d98f" stop-opacity=".2"/></linearGradient></defs></svg></div>
-    <div class="buddy b" data-coin><span class="bubble">${esc(T.hello[1])}</span>${coin("KZT",128)}</div>
-    <i class="twinkle t1">✦</i><i class="twinkle t2">✧</i><i class="twinkle t3">✦</i><i class="twinkle t4">·</i>
+    <div class="stage">
+      <div class="spot"></div>
+      <div class="podium"><div class="podium-top"></div></div>
+      <div class="pair3d">
+        <div class="buddy a" data-coin><span class="bubble">${esc(T.hello[0])}</span>${coin3d("CNY",136)}</div>
+        <div class="swap3d"><span>⇄</span></div>
+        <div class="buddy b" data-coin><span class="bubble">${esc(T.hello[1])}</span>${coin3d("KZT",136)}</div>
+      </div>
+    </div>
   </div>`;
 }
 function rateCard(p,T,i){
@@ -613,7 +626,7 @@ function rateCard(p,T,i){
     <div class="big"><span class="countup" data-v="${r>=1?r:1/r}">${sig(r>=1?r:1/r)}</span></div>
     <div class="unit">${r>=1?`1 ${SYM[from]} = ${sig(r)} ${SYM[to]}`:`${sig(1/r)} ${SYM[from]} = 1 ${SYM[to]}`}</div>
     <div class="ex">${esc(T.example)} <b>${fmt(amt,from)}</b> → <b>${fmt(amt*r,to)}</b></div></div>`;
-  return `<article class="rcard${feat?" feat":""}" style="--d:${i*90}ms">
+  return `<article class="rcard tilt${feat?" feat":""}">
     <header><span class="pairtag">${nm[p.b]} ⇄ ${nm[p.q]}</span>${feat?'<span class="hot">🔥 '+(S.lang==="ru"?"популярно":"热门")+'</span>':""}</header>
     <div class="dirs">${half(p.b,p.q,bu,exB,"d1")}${half(p.q,p.b,1/se,exQ,"d2")}</div>
   </article>`;
@@ -639,10 +652,10 @@ function publicPage(P,preview){
   </div></section>
   <main class="pbody wrap">
     <section id="rates" class="psec"><div class="sechead"><h2>${esc(T.board)}</h2><p>${esc(T.boardSub)}</p></div>
-      ${ok?`<div class="rates">${ps.map((p,i)=>rateCard(p,T,i)).join("")}</div>`:`<div class="glass emptystate"><div class="sleepy">${coin("CNY",86)}<span>💤</span></div><p>${esc(T.none)}</p></div>`}
+      ${ok?`<div class="rates">${ps.map((p,i)=>rateCard(p,T,i)).join("")}</div>`:`<div class="glass emptystate"><div class="sleepy">${coin3d("CNY",90)}<span>💤</span></div><p>${esc(T.none)}</p></div>`}
     </section>
     <section class="psec"><div class="sechead"><h2>${esc(T.steps)}</h2></div>
-      <div class="steps">${T.s.map(([e,h,t],i)=>`<div class="step glass" style="--d:${i*120}ms"><span class="emo">${e}</span><span class="no">0${i+1}</span><b>${esc(h)}</b><p>${esc(t)}</p></div>`).join("")}</div>
+      <div class="steps">${T.s.map(([e,h,t],i)=>`<div class="step glass tilt"><span class="emo">${e}</span><span class="no">0${i+1}</span><b>${esc(h)}</b><p>${esc(t)}</p></div>`).join("")}</div>
     </section>
     ${ok?`<section id="book" class="psec">${orderSection(P,T,preview)}</section>`:""}
     <section class="psec">${myOrdersSection(T)}</section>
@@ -654,8 +667,7 @@ function publicPage(P,preview){
 function orderSection(P,T,preview){
   const nm=NAMES[S.lang]||NAMES.zh;
   if(OF.result){const R=OF.result;return `<div class="glass okpanel">
-    <div class="confetti" aria-hidden="true">${Array.from({length:18},(_,i)=>`<i style="--x:${(i*53)%100}%;--d:${(i%6)*90}ms;--c:${["#f3d98f","#58cbe8","#ff8fa3","#a897ff","#ffd45a","#ffffff"][i%6]}"></i>`).join("")}</div>
-    <div class="highfive">${coin(OF.from,70)}<span class="party">🎉</span>${coin(OF.to,70)}</div>
+    <div class="highfive">${coin3d(OF.from,76)}<span class="party">🎉</span>${coin3d(OF.to,76)}</div>
     <h2>${esc(T.ok)}</h2>
     <div class="okcode"><small>${esc(T.code)}</small><b id="okcode">${esc(R.code)}</b><button class="btn ghost-light" type="button" id="copyCode">${esc(T.copy)}</button></div>
     <div class="conv-out"><div><span>${esc(T.youPay)}</span><b>${fmt(num(OF.amount),OF.from)}</b></div><div><span>${esc(T.youGet)}</span><b>${fmt(num(R.to_amount),OF.to)}</b></div></div>
@@ -663,7 +675,7 @@ function orderSection(P,T,preview){
   const quick=[["CNY","KZT"],["KZT","CNY"]];
   const opts=c=>CURS.map(x=>`<option value="${x}"${x===c?" selected":""}>${SYM[x]} ${x} · ${esc(nm[x])}</option>`).join("");
   return `<form class="glass orderform" id="orderForm" novalidate>
-    <div class="formhead"><div><h2>${esc(T.order)}</h2><p>${esc(T.orderSub)}</p></div><div class="peek">${coin(OF.from,54)}</div></div>
+    <div class="formhead"><div><h2>${esc(T.order)}</h2><p>${esc(T.orderSub)}</p></div><div class="peek">${coin3d(OF.from,58)}</div></div>
     <div class="quick">${quick.map(([a,b])=>`<button type="button" class="qdir" data-qf="${a}" data-qt="${b}" aria-pressed="${OF.from===a&&OF.to===b}"><span>${SYM[a]}</span>→<span>${SYM[b]}</span> ${esc(T.dir(a,b))}</button>`).join("")}</div>
     <div class="swaprow">
       <div class="field"><label for="of-amount">${esc(T.pay)}</label><div class="conv-row"><input id="of-amount" inputmode="decimal" value="${esc(OF.amount)}" aria-label="${esc(T.amount)}"><select id="of-from" aria-label="${esc(T.pay)}">${opts(OF.from)}</select></div></div>
@@ -723,6 +735,19 @@ function countUp(){
     const step=t=>{const k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3);el.textContent=sig(v*e);if(k<1)requestAnimationFrame(step);else el.textContent=sig(v)};requestAnimationFrame(step)});
 }
 let helloTimer=null;
+// 3D tilt that follows the mouse (touch screens keep the resting angle so scrolling stays smooth)
+function bindTilt(){
+  if(reduceMotion())return;
+  const sc=document.querySelector(".scene");
+  if(sc){sc.onpointermove=e=>{if(e.pointerType!=="mouse")return;const r=sc.getBoundingClientRect(),dx=(e.clientX-r.left)/r.width-.5,dy=(e.clientY-r.top)/r.height-.5;
+      sc.querySelectorAll(".pair3d .c3d").forEach(c=>{c.style.setProperty("--ry",(-18+dx*50).toFixed(1)+"deg");c.style.setProperty("--rx",(10-dy*30).toFixed(1)+"deg")})};
+    sc.onpointerleave=()=>sc.querySelectorAll(".pair3d .c3d").forEach(c=>{c.style.removeProperty("--ry");c.style.removeProperty("--rx")})}
+  document.querySelectorAll(".tilt").forEach(el=>{
+    el.onpointermove=e=>{if(e.pointerType!=="mouse")return;const r=el.getBoundingClientRect(),dx=(e.clientX-r.left)/r.width-.5,dy=(e.clientY-r.top)/r.height-.5;
+      el.style.setProperty("--tx",(-dy*8).toFixed(2)+"deg");el.style.setProperty("--ty",(dx*10).toFixed(2)+"deg");el.style.setProperty("--gx",((dx+.5)*100).toFixed(0)+"%");el.style.setProperty("--gy",((dy+.5)*100).toFixed(0)+"%");el.classList.add("tilting")};
+    el.onpointerleave=()=>{el.style.removeProperty("--tx");el.style.removeProperty("--ty");el.classList.remove("tilting")};
+  });
+}
 function bindPublic(){
   document.body.classList.add("is-pub");
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{readOF();S.lang=b.dataset.lang;savePrefs();render()});
@@ -730,8 +755,8 @@ function bindPublic(){
   const ex=$("#exitPreview");if(ex)ex.onclick=()=>{S.preview=false;shellRole=null;document.body.classList.remove("is-pub");render();window.scrollTo({top:0})};
   const ol=$("#openLogin");if(ol)ol.onclick=()=>{S.showLogin=true;S.loginErr="";render()};
   // tap a coin buddy: it jumps and a little heart floats up
-  document.querySelectorAll("[data-coin]").forEach(c=>c.onclick=()=>{c.classList.remove("jump");void c.offsetWidth;c.classList.add("jump");
-    const h=document.createElement("span");h.className="heart";h.textContent=["💛","💙","✨","🥰"][Math.floor(Math.random()*4)];c.appendChild(h);setTimeout(()=>h.remove(),1200)});
+  document.querySelectorAll("[data-coin]").forEach(c=>c.onclick=()=>{const k=c.querySelector(".c3d-in");if(k)k.classList.toggle("flipped")});
+  bindTilt();
   // the buddies take turns saying hello
   clearInterval(helloTimer);const T=L[S.lang]||L.zh;let n=0;
   helloTimer=setInterval(()=>{const bs=document.querySelectorAll(".buddy .bubble");if(!bs.length){clearInterval(helloTimer);return}n++;bs[n%2].textContent=T.hello[n%T.hello.length]},3000);

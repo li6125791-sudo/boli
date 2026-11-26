@@ -57,7 +57,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .sun{position:absolute;color:var(--gold-2);pointer-events:none;opacity:.28}
 .hero > .sun{width:240px;height:240px;right:-60px;top:-70px}
 .sun .rays{transform-origin:50% 50%}
-@media (prefers-reduced-motion:no-preference){.sun .rays{animation:spin 80s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}}
+
 
 /* ===== owner top bar ===== */
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:rgba(14,21,48,.96);color:var(--band-ink);border-bottom:1px solid rgba(230,199,122,.25);backdrop-filter:blur(10px)}
@@ -318,7 +318,7 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 /* hero */
 .phero{padding-block:clamp(28px,6vw,64px) clamp(20px,4vw,40px)}
 .phero-in{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:24px;align-items:center}
-@media (max-width:760px){.phero-in{grid-template-columns:minmax(0,1fr)}.scene{order:-1;height:190px}}
+@media (max-width:760px){.phero-in{grid-template-columns:minmax(0,1fr)}.scene{order:-1;height:250px}.stage{height:240px;transform:scale(.86)}}
 .phero .copy{display:grid;gap:16px;justify-items:start}
 .eyebrow-pill{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--champ-2);border:1px solid rgba(230,199,122,.35);background:rgba(230,199,122,.08);border-radius:999px;padding:5px 12px}
 .eyebrow-pill i{width:7px;height:7px;border-radius:50%;background:var(--champ);box-shadow:0 0 0 4px rgba(230,199,122,.18)}
@@ -328,41 +328,38 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .phero p{margin:0;color:var(--p-muted);font-size:16px;max-width:36em}
 .big-cta{min-height:52px;padding:0 22px;font-size:16px;border-radius:14px}
 .wiggle{display:inline-block}
-@media (prefers-reduced-motion:no-preference){.wiggle{animation:wiggle 2.4s ease-in-out infinite}@keyframes wiggle{0%,70%,100%{transform:rotate(0)}75%{transform:rotate(-14deg)}85%{transform:rotate(12deg)}}}
 .stamp{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--p-muted);font-variant-numeric:tabular-nums}
 .stamp i{width:8px;height:8px;border-radius:50%;background:#59d38a;box-shadow:0 0 0 4px rgba(89,211,138,.18);animation:blink 1.8s infinite}
 
-/* coin buddies */
-.scene{position:relative;height:300px;display:flex;align-items:center;justify-content:center;gap:4px}
-.halo{position:absolute;width:300px;height:300px;max-width:90%;border-radius:50%;background:radial-gradient(circle,rgba(230,199,122,.28),rgba(230,199,122,0) 65%);filter:blur(6px)}
+/* 3D stage: two thick coins standing on a glowing podium (no floating) */
+.scene{position:relative;height:320px;display:grid;place-items:center;perspective:1100px}
+.stage{position:relative;width:min(380px,100%);height:280px;transform-style:preserve-3d}
+.spot{position:absolute;left:50%;top:-10px;width:300px;height:300px;transform:translateX(-50%);background:radial-gradient(closest-side,rgba(246,227,171,.32),rgba(246,227,171,0));pointer-events:none}
+.podium{position:absolute;left:50%;bottom:18px;width:330px;max-width:96%;height:46px;transform:translateX(-50%);border-radius:50%;
+  background:linear-gradient(180deg,#2a3458,#141b33);box-shadow:0 22px 40px -10px rgba(0,0,0,.8),0 0 60px -10px rgba(230,199,122,.35)}
+.podium::before{content:"";position:absolute;left:0;right:0;top:50%;height:30px;background:linear-gradient(180deg,#1d2647,#0b1024);border-radius:0 0 50% 50%/0 0 100% 100%;z-index:-1}
+.podium-top{position:absolute;inset:0;border-radius:50%;background:radial-gradient(70% 90% at 50% 35%,#3b4778,#1b2346 70%);box-shadow:inset 0 2px 0 rgba(246,227,171,.45),inset 0 -6px 14px rgba(0,0,0,.5)}
+.pair3d{position:absolute;left:0;right:0;bottom:46px;display:flex;align-items:flex-end;justify-content:center;gap:2px}
 .buddy{position:relative;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.buddy .coin{display:block;filter:drop-shadow(0 18px 24px rgba(0,0,0,.45));width:clamp(92px,14vw,128px);height:auto}
-.buddy.b{margin-top:44px}
-.coin .eyes{transform-box:fill-box;transform-origin:center}
-.bubble{position:absolute;top:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#fff;color:#0e1530;font-weight:800;font-size:13px;padding:5px 11px;border-radius:14px;box-shadow:0 8px 20px -6px rgba(0,0,0,.5)}
-.bubble::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;background:#fff;transform:translateX(-50%) rotate(45deg);border-radius:2px}
-.swapper{position:relative;z-index:1;opacity:.95}
-.twinkle{position:absolute;color:var(--champ-2);font-style:normal;font-size:18px;opacity:.8}
-.t1{top:12%;left:16%}.t2{top:20%;right:14%;font-size:22px}.t3{bottom:12%;left:30%;font-size:14px}.t4{bottom:24%;right:24%;font-size:30px}
-.heart{position:absolute;left:50%;top:0;font-size:22px;pointer-events:none;animation:floatup 1.2s ease-out forwards}
-@keyframes floatup{from{transform:translate(-50%,0) scale(.6);opacity:0}20%{opacity:1}to{transform:translate(-50%,-70px) scale(1.2);opacity:0}}
-.buddy.jump{animation:jump .6s cubic-bezier(.3,1.6,.5,1)}
-@keyframes jump{30%{transform:translateY(-26px) rotate(-8deg)}60%{transform:translateY(0) rotate(4deg)}}
-@media (prefers-reduced-motion:no-preference){
-  .buddy.a:not(.jump){animation:bob 3.4s ease-in-out infinite}
-  .buddy.b:not(.jump){animation:bob 3.4s ease-in-out -1.7s infinite}
-  @keyframes bob{50%{transform:translateY(-12px) rotate(3deg)}}
-  .coin .eyes{animation:blinkeye 4.6s infinite}
-  .buddy.b .coin .eyes{animation-delay:1.3s}
-  @keyframes blinkeye{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.12)}}
-  .bubble{animation:bubble 3s ease-in-out infinite}
-  .buddy.b .bubble{animation-delay:1.5s}
-  @keyframes bubble{0%{transform:translateX(-50%) scale(0);opacity:0}12%,70%{transform:translateX(-50%) scale(1);opacity:1}85%,100%{transform:translateX(-50%) scale(.6);opacity:0}}
-  .swapper .arc1,.swapper .arc2{stroke-dasharray:6 8;animation:dash 1.6s linear infinite}
-  @keyframes dash{to{stroke-dashoffset:-28}}
-  .twinkle{animation:twinkle 2.6s ease-in-out infinite}.t2{animation-delay:.6s}.t3{animation-delay:1.2s}.t4{animation-delay:1.8s}
-  @keyframes twinkle{50%{opacity:.15;transform:scale(.6) rotate(30deg)}}
-}
+.buddy.b{transform:translateY(-4px)}
+.buddy::after{content:"";position:absolute;left:12%;right:12%;bottom:-10px;height:16px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),transparent);z-index:-1}
+.bubble{position:absolute;top:-34px;left:50%;transform:translateX(-50%);white-space:nowrap;background:linear-gradient(180deg,#ffffff,#e9ecf6);color:#0e1530;font-weight:800;font-size:13px;padding:5px 12px;border-radius:14px;box-shadow:0 3px 0 #b9bfd3,0 10px 20px -6px rgba(0,0,0,.6);z-index:2}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;background:#e9ecf6;transform:translateX(-50%) rotate(45deg);border-radius:2px}
+.swap3d{width:52px;height:52px;margin:0 -2px 46px;border-radius:50%;display:grid;place-items:center;font-size:22px;font-weight:800;color:#1a1405;
+  background:radial-gradient(circle at 35% 30%,#fff6d6,#e6c77a 55%,#a77f2c);box-shadow:0 4px 0 #7d5e1f,0 12px 18px -6px rgba(0,0,0,.7),inset 0 1px 0 #fff;z-index:2}
+
+/* the 3D coin itself */
+.c3d{width:var(--s);height:var(--s);perspective:700px;flex:none}
+.c3d-in{position:relative;width:100%;height:100%;transform-style:preserve-3d;transform:rotateX(var(--rx,10deg)) rotateY(var(--ry,-18deg));transition:transform .35s ease-out}
+.buddy.b .c3d{--ry:18deg}
+.c3d-in.flipped{transform:rotateX(var(--rx,10deg)) rotateY(calc(var(--ry,-18deg) + 360deg));transition:transform .9s cubic-bezier(.3,1.25,.5,1)}
+.c3d .face{position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.c3d .face svg{display:block;width:100%;height:100%}
+.c3d .front{transform:translateZ(calc(var(--s) * .06))}
+.c3d .back{transform:rotateY(180deg) translateZ(calc(var(--s) * .06))}
+.c3d > .c3d-in > i{position:absolute;inset:1.5%;border-radius:50%;background:linear-gradient(90deg,var(--rim2),var(--rim1) 45%,var(--rim2));transform:translateZ(calc((var(--z) - 5.5) * var(--s) * .0105))}
+.highfive .c3d-in,.peek .c3d-in,.sleepy .c3d-in,.authcoin .c3d-in{--ry:-24deg}
+.highfive .c3d:last-of-type .c3d-in{--ry:24deg}
 
 /* sections */
 .pbody{display:grid;gap:clamp(28px,5vw,48px);padding-bottom:56px}
@@ -379,8 +376,6 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .pairtag{font-family:"Noto Serif SC","Playfair Display",serif;font-weight:700;font-size:18px;color:var(--p-ink)}
 .rcard.feat .pairtag{font-size:22px}
 .hot{font-size:12px;font-weight:800;color:#1a1405;background:linear-gradient(140deg,#fbeec4,#e2bf6b);border-radius:999px;padding:3px 10px}
-@media (prefers-reduced-motion:no-preference){.hot{animation:pulse 2.4s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.07)}}
-  .rcard{animation:rise .7s cubic-bezier(.2,.9,.3,1) both;animation-delay:var(--d)}@keyframes rise{from{opacity:0;transform:translateY(18px)}}}
 .dirs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:460px){.dirs{grid-template-columns:minmax(0,1fr)}}
 .dir{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:14px;display:grid;gap:6px;min-width:0}
@@ -402,14 +397,12 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .step .no{position:absolute;right:18px;top:16px;font-family:"Playfair Display",serif;font-size:28px;color:rgba(230,199,122,.35);font-weight:700}
 .step b{font-size:16px}
 .step p{margin:0;color:var(--p-muted);font-size:13px}
-@media (prefers-reduced-motion:no-preference){.step .emo{animation:hop 3s ease-in-out infinite;animation-delay:var(--d)}@keyframes hop{0%,80%,100%{transform:translateY(0)}88%{transform:translateY(-8px) rotate(-8deg)}}}
 
 /* order form */
 .orderform{display:grid;gap:16px;padding:clamp(18px,3vw,28px);border-color:rgba(230,199,122,.3)}
 .formhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .formhead p{margin:4px 0 0;color:var(--p-muted);font-size:14px}
-.peek .coin{width:54px;height:54px}
-@media (prefers-reduced-motion:no-preference){.peek{animation:peek 4s ease-in-out infinite}@keyframes peek{0%,60%,100%{transform:rotate(0)}70%{transform:rotate(-12deg) translateY(-4px)}80%{transform:rotate(10deg)}}}
+
 .quick{display:flex;gap:8px;flex-wrap:wrap}
 .qdir{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);color:var(--p-ink);border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer;transition:all .15s}
 .qdir span{color:var(--champ-2)}
@@ -438,13 +431,8 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .okpanel{display:grid;gap:14px;justify-items:center;text-align:center;position:relative;overflow:hidden;border-color:rgba(230,199,122,.45)}
 .okpanel p{margin:0;color:var(--p-muted)}
 .highfive{display:flex;align-items:center;gap:6px}
-.highfive .coin{width:70px;height:70px}
+.highfive{gap:10px;padding-top:6px}
 .party{font-size:34px}
-@media (prefers-reduced-motion:no-preference){.highfive .coin:first-child{animation:hfL 1s cubic-bezier(.3,1.6,.5,1) 2}.highfive .coin:last-child{animation:hfR 1s cubic-bezier(.3,1.6,.5,1) 2}.party{animation:jump .8s .2s 2}
-  @keyframes hfL{40%{transform:translateX(14px) rotate(12deg)}}@keyframes hfR{40%{transform:translateX(-14px) rotate(-12deg)}}}
-.confetti{position:absolute;inset:0;pointer-events:none}
-.confetti i{position:absolute;top:-12px;left:var(--x);width:8px;height:12px;border-radius:2px;background:var(--c);opacity:0}
-@media (prefers-reduced-motion:no-preference){.confetti i{animation:fall 1.8s ease-in var(--d) 2}@keyframes fall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(320px) rotate(540deg)}}}
 .okcode{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;background:rgba(230,199,122,.12);border:1px dashed rgba(230,199,122,.5);border-radius:16px;padding:10px 16px;width:100%}
 .okcode small{font-size:12px;color:var(--p-muted);font-weight:800}
 .okcode b{font-family:"Playfair Display",serif;font-size:30px;letter-spacing:.14em;color:var(--champ-2)}
@@ -467,7 +455,6 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .disclaimer{color:var(--p-muted);font-size:12px;text-align:center;opacity:.8}
 .sleepy{position:relative;display:inline-block}
 .sleepy span{position:absolute;right:-18px;top:-8px;font-size:22px}
-@media (prefers-reduced-motion:no-preference){.sleepy span{animation:floatup 2.4s ease-out infinite}}
 .preview-bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:linear-gradient(140deg,#fbeec4,#e2bf6b);color:#1a1405;font-weight:800;font-size:13px}
 .preview-bar .wrap{display:flex;gap:10px;align-items:center;justify-content:space-between;padding-block:8px;flex-wrap:wrap}
 .preview-bar .btn{background:#1a1405;color:#fbeec4;border-color:#1a1405}
@@ -477,9 +464,39 @@ main.wrap{padding-block:20px 120px;display:grid;gap:18px}
 .pub .sheet{background:#111830;color:var(--p-ink);border:1px solid rgba(230,199,122,.3)}
 .auth-card{max-width:440px}
 .auth-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center}
-.authcoin .coin{width:56px;height:56px}
+
 .auth-top p{margin:2px 0 0;color:var(--p-muted);font-size:13px}
 .pub .sheet .btn.primary{background:linear-gradient(140deg,#fbeec4,#e2bf6b 50%,#b8913a);color:#1a1405;border-color:transparent}
 .pub .sheet .btn.ghost{color:var(--p-ink)}
 
-@media (prefers-reduced-motion:no-preference){.sheet{animation:up .3s cubic-bezier(.2,1.2,.4,1)}@keyframes up{from{transform:translateY(30px);opacity:.3}}}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .25s ease-out}@keyframes up{from{transform:translateY(16px);opacity:.4}}}
+
+/* ===== 3D surfaces ===== */
+.glass,.rcard{box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 -1px 0 rgba(0,0,0,.45),0 8px 0 -2px rgba(4,7,16,.85),0 30px 50px -28px rgba(0,0,0,.9)}
+.rcard.feat{box-shadow:inset 0 1px 0 rgba(246,227,171,.35),inset 0 -1px 0 rgba(0,0,0,.45),0 10px 0 -2px rgba(60,45,12,.9),0 36px 60px -30px rgba(230,199,122,.45)}
+.tilt{transform:perspective(1000px) rotateX(var(--tx,0deg)) rotateY(var(--ty,0deg));transform-style:preserve-3d;transition:transform .4s ease-out}
+.tilt.tilting{transition:transform .08s linear}
+.tilt::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;background:radial-gradient(40% 50% at var(--gx,50%) var(--gy,50%),rgba(255,255,255,.14),transparent 70%)}
+.tilt.tilting::after{opacity:1}
+.rcard .dirs,.rcard header{transform:translateZ(28px)}
+.step .emo,.step b{transform:translateZ(24px)}
+.dir{box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 6px 0 -2px rgba(0,0,0,.5)}
+.step .emo{display:grid;place-items:center;width:58px;height:58px;font-size:30px;border-radius:16px;background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.04));box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 5px 0 rgba(0,0,0,.45),0 12px 18px -8px rgba(0,0,0,.7)}
+/* extruded buttons */
+.pub .btn.gold,.btn.gold{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 5px 0 #8a6a1f,0 14px 22px -10px rgba(0,0,0,.7)}
+.pub .btn.gold:active,.btn.gold:active{transform:translateY(4px);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 1px 0 #8a6a1f,0 6px 10px -6px rgba(0,0,0,.7)}
+.btn.ghost-light,.loginbtn,.langs{box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 3px 0 rgba(0,0,0,.45)}
+.btn.ghost-light:active,.loginbtn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.45)}
+.qdir{box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 3px 0 rgba(0,0,0,.45)}
+.qdir[aria-pressed="true"]{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 4px 0 #8a6a1f}
+.qdir:active{transform:translateY(2px)}
+.swapbtn{box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 0 rgba(60,45,12,.9)}
+.swapbtn:active{transform:translateY(3px) rotate(180deg)}
+.pub .field input,.pub .field select,.pub .conv-row input,.pub .conv-row select,.pub .bigsel,.lookup input{box-shadow:inset 0 3px 6px rgba(0,0,0,.45),inset 0 -1px 0 rgba(255,255,255,.06)}
+.quotebox{box-shadow:inset 0 1px 0 rgba(246,227,171,.3),0 6px 0 -1px rgba(4,7,16,.8)}
+/* embossed headline and numbers */
+.phero h1{text-shadow:0 1px 0 #c8ccda,0 2px 0 #a3a9be,0 3px 0 #7d849c,0 4px 0 #5c637b,0 14px 22px rgba(0,0,0,.6)}
+.goldtext{text-shadow:none;filter:drop-shadow(0 1px 0 #b18a35) drop-shadow(0 1px 0 #8f6c25) drop-shadow(0 2px 0 #6d5119) drop-shadow(0 10px 14px rgba(0,0,0,.55))}
+.dir .big,.quotebox b,.okcode b{filter:drop-shadow(0 1px 0 #b18a35) drop-shadow(0 1px 0 #8f6c25) drop-shadow(0 2px 0 #6d5119) drop-shadow(0 8px 10px rgba(0,0,0,.5))}
+.hot{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 3px 0 #8a6a1f}
+@media (prefers-reduced-motion:reduce){.tilt,.c3d-in{transition:none}}
