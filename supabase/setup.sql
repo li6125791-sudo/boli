@@ -64,6 +64,12 @@ alter table public.clients  enable row level security;
 alter table public.settings enable row level security;
 alter table public.orders   enable row level security;
 
+-- 让网站能通过 API 访问这些表（真正能看到什么由下面的 RLS 规则决定）
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.txns, public.clients, public.settings, public.orders to authenticated;
+grant select on public.settings to anon;
+revoke all on public.admins from anon, authenticated;
+
 create or replace function public.is_admin() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
