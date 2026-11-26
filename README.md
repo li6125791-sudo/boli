@@ -1,33 +1,23 @@
 # Boli 账本
 
-美元 (USD) / 坚戈 (KZT) / 人民币 (CNY) 进出账系统 + 给客户看的汇率网站。
+美元 (USD) / 坚戈 (KZT) / 人民币 (CNY) 进出账系统 + 客户在线换汇预约网站。
 
-## 网站结构（GitHub Pages）
+**上线步骤见 [SETUP.md](SETUP.md)。**
 
 | 文件 | 作用 |
 |---|---|
-| `index.html` | **客户看的汇率页**（网站首页）：只显示你发布的汇率、联系方式、换算器，中文 / 俄语 |
-| `admin.html` | **你的后台账本**：进账、出账、换汇、客户、利润、内部汇率、发布客户汇率 |
-| `rates.json` | 客户汇率数据，后台点「发布给客户」时自动更新 |
+| `index.html` | 客户网站：今日汇率、在线预约换汇（自动计算能换多少）、按订单号查进度，中文 / 俄语 |
+| `admin.html` | 后台（邮箱 + 密码登录）：概览、订单、流水、客户、汇率 |
+| `config.js` | 唯一需要填写的设置：Supabase 地址和公开 key |
 | `app.js` / `app.css` | 程序和样式 |
-| `claude-artifact.html` | Claude 版本（在 claude.ai 上运行的同款页面） |
+| `supabase/setup.sql` | 数据库表、权限规则、下单和查单功能 |
+| `claude-artifact.html` | 旧的 Claude 版本 |
 
-## 隐私
+## 功能
 
-- 账本数据只保存在你打开 `admin.html` 的那台设备的浏览器里，不会上传。别人打开 `admin.html` 只会看到一个空账本。
-- 客户在首页只能看到 `rates.json` 里的内容。
-- 换设备或清理浏览器前，在「流水」点「备份 JSON」，到新设备点「恢复备份」。
-
-## 开启网站
-
-1. 仓库 → **Settings → Pages** → Source 选 **Deploy from a branch**，分支选放这些文件的分支，文件夹 `/ (root)`，保存。
-2. 约 1 分钟后网址出现在同一页面，例如 `https://<用户名>.github.io/boli/`。
-   - 客户网址：`https://<用户名>.github.io/boli/`
-   - 你的后台：`https://<用户名>.github.io/boli/admin.html`
-
-## 让后台可以发布汇率
-
-1. GitHub → 头像 → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**。
-2. Repository access 选 **Only select repositories** → 这个仓库；Permissions → **Contents: Read and write**。
-3. 复制令牌，在后台「汇率」→「GitHub 发布设置」里填入用户名、仓库名、网站分支和令牌，点保存。
-4. 以后改好汇率点「发布给客户」，网站约 1 分钟后更新。令牌只保存在你这台设备的浏览器里。
+- 每笔账记录当时的 USD/CNY、USD/KZT 汇率，自动折算、自动算利润（含换汇利润）
+- 进账 / 出账 / 换汇、手续费、应收应付、客户统计、月度图表、各币种余额
+- 客户网站只显示你发布的汇率；内部汇率、账本、利润只有管理员能看到
+- 客户下单 → 后台实时提醒 → 确认 → 一键「完成并记账」
+- 所有修改立即保存到云端，多台设备同时打开实时同步
+- 导出 Excel (CSV)、备份 / 导入 JSON
