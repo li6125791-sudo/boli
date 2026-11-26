@@ -5,7 +5,7 @@
 //   anon public key    → supabaseAnonKey   （这个 key 本来就是公开的，可以放在网站里）
 // ============================================================
 window.BOLI_CONFIG = {
-  supabaseUrl: "",
+  supabaseUrl: "https://ehltorpszvtuupqwzocg.supabase.co",
   supabaseAnonKey: "",
   company: "Boli"
 };
