@@ -1,0 +1,12 @@
+{
+  "name": "Boli 账本",
+  "short_name": "Boli",
+  "start_url": "admin.html",
+  "display": "standalone",
+  "background_color": "#0e3534",
+  "theme_color": "#0e3534",
+  "icons": [
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

@@ -1,0 +1,55 @@
+# Boli 账本 — 项目说明（给 Claude 看的记忆文件）
+
+> 每次在这个仓库开新对话，Claude 会先读这个文件。改了架构、加了功能、换了设置，都要更新这里。
+> 本仓库是**公开**的：这里不要写邮箱、密码、service_role key 或任何私人信息。
+
+## 用户和业务
+- 老板做中国 ↔ 哈萨克斯坦生意，经手 **美元 USD / 坚戈 KZT / 人民币 CNY**，也给客户换汇。
+- **回复一律用中文**，一步一步讲，用户不写代码；主要在 **iPad + Safari** 上操作，遇到问题会发截图。
+- 客户在哈萨克斯坦，客户网站要有 **中文 + 俄语**。
+
+## 用户提出过的要求（按时间）
+1. 进账 / 出账会计系统：每笔记录当时汇率，三种货币，按客户统计，自动算利润，好看好用。
+2. 更美观；发给客户能看到汇率，但汇率由老板自己调；后台数据只有老板能看（隐私）。
+3. 做成网站（GitHub Pages）。
+4. 做成真正的软件：后台要**密码登录**；客户能**在线预约换汇**（写多少钱、怎么换）；以后**方便更新**；每次修改**自动保存**；全程自动化。
+5. 问过能否用 iPad 当数据库 → 解释了不行（订单需要 24 小时在线的服务器），保留 Supabase。
+
+## 架构
+| 文件 | 作用 |
+|---|---|
+| `index.html` | 客户网站（`BOLI_MODE="public"`）：已发布汇率、在线预约表单（实时报价）、订单号查进度，中 / 俄 |
+| `admin.html` | 后台（`BOLI_MODE="admin"`）：邮箱+密码登录；概览 / 订单 / 流水 / 客户 / 汇率 |
+| `app.js` | 两个页面共用的全部程序（按 `/* ---------- 章节 ---------- */` 分段） |
+| `app.css` | 样式；颜色全用 `:root` 变量，深色模式另有一套 |
+| `config.js` | 唯一配置：Supabase URL + anon key + 公司名 |
+| `supabase/setup.sql` | 建表、RLS 权限、`place_order` / `order_status` / `claim_admin` 函数、实时同步；**可重复运行** |
+| `SETUP.md` | 给用户的上线步骤 |
+| `claude-artifact.html` | 早期的 Claude Artifact 版本（https://claude.ai/artifact/MWUafEqnSyYRhbXYwzPf87），已不是主版本 |
+
+- 前端：纯 HTML/CSS/JS，无构建步骤；supabase-js 2.45.4 从 jsdelivr 加载。
+- 后端：**Supabase**（Postgres + Auth + Realtime）。
+  - 项目 ref：`ehltorpszvtuupqwzocg`，区域 Tokyo (ap-northeast-1)，免费版。
+  - `txns` / `clients`：`{id text, doc jsonb, updated_at}`，记录内容放在 `doc` 里，加字段不用改表。
+  - `settings`：`key='public'`（客户汇率，anon 可读）、`key='internal'`（内部汇率，仅管理员）。
+  - `orders`：客户订单；anon 只能通过 `place_order` RPC 下单（汇率在服务器端按已发布汇率计算），用 `order_status(code)` 查单。
+  - `admins`：管理员邮箱；**第一个登录后台的账号自动成为管理员**（`claim_admin`）。
+- 每笔账的汇率存为「每 1 美元的单位数」：`rates: {CNY, KZT}`。换汇（fx）的利润 = 收进 − 付出（按本笔汇率折算）。
+- 订单「完成并记账」= 生成一笔 fx：`currency`=客户要的币种（我们付出），`toCurrency`=客户付的币种（我们收进）。
+
+## 网址
+- 客户网站：https://li6125791-sudo.github.io/boli/
+- 后台：https://li6125791-sudo.github.io/boli/admin.html
+- Supabase 控制台：https://supabase.com/dashboard/project/ehltorpszvtuupqwzocg
+
+## 当前状态（2026-11-26）
+- 代码在分支 `claude/accounting-system-design-b57g1h`；`main` 只有 README。建议合并到 `main` 并把 Pages 改成 `main`（已向用户提议，待确认）。
+- 已完成：Supabase 项目创建、`setup.sql` 运行成功、后台账号已创建、`config.js` 已填 URL 和 anon key。
+- 进行中：GitHub Pages 开启（选分支 → Save）；关闭 Supabase「Allow new users to sign up」；第一次登录后台、发布汇率。
+- 尚未在真实 Supabase 上端到端测试过（云端开发环境连不上 supabase.co）。
+
+## 修改时的约定
+- 改完用 Playwright + 假的 supabase 客户端（拦截 jsdelivr 的 supabase-js 和 `config.js`）走一遍：登录 → 发布汇率 → 客户下单 → 后台确认 → 完成并记账。
+- 改数据库：只追加到 `supabase/setup.sql`，保持可重复运行（`if not exists` / `create or replace` / `drop policy if exists`），并提醒用户在 SQL Editor 再运行一次。可用本机 PostgreSQL 16 先测（需要建 `anon` / `authenticated` 角色和 `auth.jwt()` 桩）。
+- 界面文字：后台中文；客户页中 / 俄两套（`L.zh` / `L.ru`）。
+- 提交信息末尾不写模型名。
