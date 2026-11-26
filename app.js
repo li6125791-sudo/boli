@@ -41,7 +41,7 @@ function compact(n,cur){
 const rfmt=(n,d=4)=>(+n).toLocaleString("en-US",{maximumFractionDigits:d});
 function sig(n){const a=Math.abs(n);return rfmt(n,a>=100?2:a>=1?4:a>=0.01?5:7)}
 function plain(n){const a=Math.abs(n);return String(+n.toFixed(a>=100?2:a>=1?4:a>=0.01?5:7))}
-function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+function toast(msg){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
 function newId(){return (crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,10))}
 function fmtTime(iso){if(!iso)return "";const d=new Date(iso);return isoD(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())}
 function nowStamp(){const d=new Date(),off=-d.getTimezoneOffset(),a=Math.abs(off);return isoD(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())+" (UTC"+(off>=0?"+":"-")+Math.floor(a/60)+(a%60?":"+pad(a%60):"")+")"}
@@ -378,7 +378,8 @@ function orderCard(o,D){
     <div class="ohead"><span class="chip ost-${esc(st)}">${ORDER_ST[st]||esc(st)}</span><span class="num ocode">#${esc(o.code)}</span><span class="otime">${esc(fmtTime(o.created_at))}</span></div>
     <div class="owho"><b>${esc(o.name)}</b><button class="linkbtn num" type="button" data-copy="${esc(o.phone)}">${esc(o.phone)}</button></div>
     <div class="odeal"><div><small>客户付</small><b class="num">${fmt(num(o.amount),o.from_cur)}</b></div><span class="arrow">→</span><div><small>客户得</small><b class="num">${fmt(num(o.to_amount),o.to_cur)}</b></div></div>
-    <div class="ometa"><span>汇率 1 ${esc(o.from_cur)} = ${sig(num(o.rate))} ${esc(o.to_cur)}</span>${o.method?`<span>${esc(o.method)}</span>`:""}${o.want_date?`<span>希望 ${esc(o.want_date)}</span>`:""}<span class="${p<0?"neg":"pos"}">预计利润 ${fmt(p,D,{plus:true})}</span></div>
+    ${st==="new"||st==="confirmed"?(()=>{const p=dealPair(o.from_cur,o.to_cur);return `<div class="field orate"><label for="or-${esc(o.id)}">本单汇率 · 1 ${p.b} = ? ${p.q}<small>可以按这位客户单独改，客户得的金额自动重算</small></label><input id="or-${esc(o.id)}" data-orate="${esc(o.id)}" inputmode="decimal" value="${plain(factorToDeal(o.from_cur,o.to_cur,num(o.rate)))}"></div>`})():""}
+    <div class="ometa"><span>汇率 ${rateLine(o.from_cur,o.to_cur,num(o.rate))}</span>${o.method?`<span>${esc(o.method)}</span>`:""}${o.want_date?`<span>希望 ${esc(o.want_date)}</span>`:""}<span class="${p<0?"neg":"pos"}">预计利润 ${fmt(p,D,{plus:true})}</span></div>
     ${o.note?`<div class="onote">客户备注：${esc(o.note)}</div>`:""}
     <div class="field"><label for="an-${esc(o.id)}">给客户的回复（客户查订单时能看到）</label><input id="an-${esc(o.id)}" data-anote="${esc(o.id)}" value="${esc(o.admin_note||"")}" placeholder="例如：明天 10 点到店，带护照"></div>
     <div class="oacts">${st==="new"?`<button class="btn primary" type="button" data-oact="confirm">确认订单</button>`:""}
@@ -395,7 +396,7 @@ async function orderAction(id,act,btn){
   if(act==="open")return openTx(o.txn_id);
   if(act==="book"){
     // exchange from the business side: we hand over to_amount(to_cur), we receive amount(from_cur)
-    openTx(null,{type:"fx",date:today(),client:o.name,currency:o.to_cur,amount:String(o.to_amount),fee:"",toCurrency:o.from_cur,toAmount:String(o.amount),
+    openTx(null,{type:"fx",date:today(),client:o.name,currency:o.to_cur,amount:String(o.to_amount),fee:"",toCurrency:o.from_cur,toAmount:String(o.amount),dealRate:plain(factorToDeal(o.from_cur,o.to_cur,num(o.rate))),
       ref:"订单 "+o.code,note:[o.method,o.note].filter(Boolean).join(" · "),orderId:o.id},async txnId=>{
       await updateOrder(id,{status:"done",txn_id:txnId});
       if(!clientByName(o.name))await saveClient({name:o.name,contact:o.phone,country:"",note:"来自网站订单",createdAt:Date.now()});
@@ -415,7 +416,7 @@ function rowHTML(t){
     const s=t.type==="in"?1:-1;amt=`<span class="${s>0?"pos":"neg"}">${fmt(s*num(t.amount),t.currency,{plus:true})}</span>${num(t.fee)?`<small>手续费 ${fmt(num(t.fee),t.currency)}</small>`:""}`;
     cv=fmt(s*(v.inc||v.exp),D,{plus:true});tag=`<span class="chip ${s>0?"t-in":"t-out"}">${s>0?"进账":"出账"}</span>`;
   }
-  const rt=t.type==="fx"?`1${t.currency}=${sig(num(t.toAmount)/(num(t.amount)||1))}${t.toCurrency}`:t.currency==="USD"?`1$=¥${rfmt(rateOf(t.rates,"CNY"))} · ₸${rfmt(rateOf(t.rates,"KZT"),2)}`:`1$=${rfmt(rateOf(t.rates,t.currency),2)}${SYM[t.currency]}`;
+  const rt=t.type==="fx"?(t.dealRate&&t.dealBase?`本单 1${t.dealBase}=${sig(num(t.dealRate))}${t.dealQuote}`:`1${t.currency}=${sig(num(t.toAmount)/(num(t.amount)||1))}${t.toCurrency}`):t.currency==="USD"?`1$=¥${rfmt(rateOf(t.rates,"CNY"))} · ₸${rfmt(rateOf(t.rates,"KZT"),2)}`:`1$=${rfmt(rateOf(t.rates,t.currency),2)}${SYM[t.currency]}`;
   return `<div class="row" data-id="${esc(t.id)}" tabindex="0" role="button"><span class="d">${esc(t.date)}</span>
     <div class="who"><b>${esc(t.client||t.category||"未指定")}</b><span>${tag}<span class="chip c-${t.currency}">${t.currency}</span>${t.status==="pending"?`<span class="chip st-pending">${t.type==="in"?"待收":"待付"}</span>`:""}${esc(t.client?t.category||"":"")}${t.ref?" · "+esc(t.ref):""}${t.note?" · "+esc(t.note):""}<span class="num" style="opacity:.75">${esc(rt)}</span></span></div>
     <div class="amt">${amt}</div><div class="amt conv">${cv}</div></div>`;
@@ -791,18 +792,17 @@ function drawTx(){
   const t=F,isFx=t.type==="fx",cats=CATS[t.type];
   $("#modal").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="txForm" novalidate>
     <h3>${t.id?"编辑记录":t.orderId?"订单记账":"记一笔"}<button class="btn ghost" type="button" data-close aria-label="关闭">✕</button></h3>
-    ${t.orderId?'<div class="banner info" style="margin:0"><b>换汇订单</b>我们付出客户要的币种，收进客户付的币种。可以按实际成交修改金额。</div>':""}
+    ${t.orderId?'<div class="banner info" style="margin:0"><b>网站订单记账</b>已按订单填好，可以按实际成交修改本单汇率或金额。</div>':""}
     <div class="typeseg">${[["in","进账"],["out","出账"],["fx","换汇"]].map(([k,l])=>`<button type="button" data-t="${k}" aria-pressed="${t.type===k}">${l}</button>`).join("")}</div>
     <div class="fgrid">
       <div class="field"><label for="tx-date">日期</label><input type="date" id="tx-date" value="${esc(t.date)}" required></div>
-      <div class="field"><label for="tx-client">客户 / 对方</label><input id="tx-client" list="clientList" value="${esc(t.client)}" placeholder="例如 Astana Trade TOO"><datalist id="clientList">${clientNames().map(n=>`<option value="${esc(n)}"></option>`).join("")}</datalist></div>
-      <div class="field full"><label>${isFx?"我们付出的币种":"币种"}</label><div class="curseg" id="tx-cur">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${t.currency===c}"><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}</div></div>
-      <div class="field"><label for="tx-amount">${isFx?"付出金额":"金额"}（${SYM[t.currency]}）</label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0" required></div>
-      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>
-      ${isFx?`<div class="field full"><label>我们收进的币种</label><div class="curseg" id="tx-tocur">${CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${t.toCurrency===c}" ${c===t.currency?"disabled":""}><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}</div></div>
-      <div class="field full"><label for="tx-toAmount">收进金额（${SYM[t.toCurrency]}）</label><input id="tx-toAmount" class="big" inputmode="decimal" value="${esc(t.toAmount)}" placeholder="0"></div>`:""}
-      <div class="field"><label for="tx-rcny">本笔汇率 1 USD = CNY</label><input id="tx-rcny" inputmode="decimal" value="${esc(t.rates.CNY)}"></div>
-      <div class="field"><label for="tx-rkzt">本笔汇率 1 USD = KZT</label><input id="tx-rkzt" inputmode="decimal" value="${esc(t.rates.KZT)}"></div>
+      <div class="field"><label>客户 / 对方</label><button type="button" class="pickfield${t.client?"":" empty"}" id="tx-client-btn">${t.client?esc(t.client):"点这里选择或添加客户"}<span>▾</span></button><input type="hidden" id="tx-client" value="${esc(t.client)}"></div>
+      <div class="picker full" id="picker" hidden><input id="pk-q" placeholder="搜索客户，或输入新客户的名字" autocomplete="off"><div class="pk-list" id="pk-list"></div></div>
+      ${isFx?fxFields(t):`<div class="field full"><label>币种</label><div class="curseg" id="tx-cur">${curBtns(t.currency)}</div></div>
+      <div class="field"><label for="tx-amount">金额（${SYM[t.currency]}）</label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0" required></div>
+      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>`}
+      <div class="field"><label for="tx-rcny">${isFx?"成本":"本笔"}汇率 1 USD = CNY</label><input id="tx-rcny" inputmode="decimal" value="${esc(t.rates.CNY)}"></div>
+      <div class="field"><label for="tx-rkzt">${isFx?"成本":"本笔"}汇率 1 USD = KZT</label><input id="tx-rkzt" inputmode="decimal" value="${esc(t.rates.KZT)}"></div>
       <div class="full calc" id="tx-calc"></div>
       ${isFx?"":`<div class="field"><label for="tx-cat">类别</label><select id="tx-cat">${[...new Set([...cats,t.category].filter(Boolean))].map(c=>`<option${c===t.category?" selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div class="field"><label for="tx-status">状态</label><select id="tx-status"><option value="done"${t.status!=="pending"?" selected":""}>已结清</option><option value="pending"${t.status==="pending"?" selected":""}>${t.type==="in"?"待收款（应收）":"待付款（应付）"}</option></select></div>`}
@@ -815,18 +815,41 @@ function drawTx(){
   </form></div>`;
   calcTx();
 }
+// ---- helpers for the exchange (换汇) form ----
+function curBtns(sel,disabled){return CURS.map(c=>`<button type="button" data-c="${c}" aria-pressed="${sel===c}" ${c===disabled?"disabled":""}><span class="chip c-${c}">${c}</span> ${CNAME[c]}</button>`).join("")}
+// show a deal rate the way people say it: "1 CNY = 71.2 KZT", never "1 KZT = 0.014 CNY"
+function dealPair(a,b){return crossRate(S.settings.rates,a,b)>=1?{b:a,q:b}:{b:b,q:a}}
+function dealToFactor(recv,pay,deal){const p=dealPair(recv,pay);return p.b===recv?deal:(deal?1/deal:0)}  // recv amount × factor = pay amount
+function factorToDeal(recv,pay,f){const p=dealPair(recv,pay);return p.b===recv?f:(f?1/f:0)}
+function siteDeal(recv,pay){const f=pubRate(PUB,recv,pay);return f?plain(factorToDeal(recv,pay,f)):""}
+function fxFields(t){
+  const p=dealPair(t.toCurrency,t.currency),site=siteDeal(t.toCurrency,t.currency);
+  return `<div class="field full"><label>客户给我们（收进）</label><div class="curseg" id="tx-tocur">${curBtns(t.toCurrency)}</div></div>
+      <div class="field"><label for="tx-toAmount">收进金额（${SYM[t.toCurrency]}）</label><input id="tx-toAmount" class="big" inputmode="decimal" value="${esc(t.toAmount)}" placeholder="0"></div>
+      <div class="field"><label for="tx-deal">本单汇率 · 1 ${p.b} = ? ${p.q}<small>${site?"网站报价 "+site+"，可以按这单实际成交改":"这单和客户谈好的汇率"}</small></label><input id="tx-deal" class="big" inputmode="decimal" value="${esc(t.dealRate||site)}" placeholder="${esc(site||sig(crossRate(S.settings.rates,p.b,p.q)))}"></div>
+      <div class="field full"><label>我们给客户（付出）</label><div class="curseg" id="tx-cur">${curBtns(t.currency,t.toCurrency)}</div></div>
+      <div class="field"><label for="tx-amount">付出金额（${SYM[t.currency]}）<small>按本单汇率自动算，也可以直接改</small></label><input id="tx-amount" class="big" inputmode="decimal" value="${esc(t.amount)}" placeholder="0"></div>
+      <div class="field"><label for="tx-fee">手续费（${SYM[t.currency]}，可选）</label><input id="tx-fee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>`;
+}
+function fxAuto(id){
+  if(!F||F.type!=="fx")return;const g=x=>$("#"+x);
+  const recv=num(g("tx-toAmount").value),deal=num(g("tx-deal").value),pay=num(g("tx-amount").value);
+  if(id==="tx-toAmount"||id==="tx-deal"){const f=dealToFactor(F.toCurrency,F.currency,deal);if(recv&&f)g("tx-amount").value=plainAmt(recv*f,F.currency)}
+  else if(id==="tx-amount"&&recv&&pay){g("tx-deal").value=plain(factorToDeal(F.toCurrency,F.currency,pay/recv))}
+}
+function plainAmt(v,c){return String(+v.toFixed(c==="KZT"?0:2))}
 function readTx(){
   const g=id=>{const el=$("#"+id);return el?el.value:""};
   F.date=g("tx-date");F.client=g("tx-client").trim();F.amount=g("tx-amount");F.fee=g("tx-fee");F.rates={CNY:g("tx-rcny"),KZT:g("tx-rkzt")};
-  if(F.type==="fx"){F.toAmount=g("tx-toAmount");F.category="换汇";F.status="done"}else{F.category=g("tx-cat");F.status=g("tx-status")}
+  if(F.type==="fx"){F.toAmount=g("tx-toAmount");F.dealRate=g("tx-deal");F.category="换汇";F.status="done"}else{F.category=g("tx-cat");F.status=g("tx-status")}
   F.ref=g("tx-ref");F.note=g("tx-note");
 }
 function calcTx(){
   readTx();const t=F,r={CNY:num(t.rates.CNY),KZT:num(t.rates.KZT)},a=num(t.amount),f=num(t.fee);
   let h=`<div class="r"><span>交叉汇率</span><b>1 CNY = ${r.CNY?rfmt(r.KZT/r.CNY,3):"—"} KZT</b></div>`;
   if(t.type==="fx"){
-    const got=num(t.toAmount),book=conv(a+f,t.currency,t.toCurrency,r),impl=got?a/got:0;
-    h+=`<div class="r"><span>成交汇率</span><b>1 ${t.toCurrency} = ${sig(impl)} ${t.currency}</b></div><div class="r"><span>按本笔汇率，付出值</span><b>${fmt(book,t.toCurrency)}</b></div>
+    const got=num(t.toAmount),book=conv(a+f,t.currency,t.toCurrency,r),p=dealPair(t.toCurrency,t.currency),dr=got&&a?factorToDeal(t.toCurrency,t.currency,a/got):0;
+    h+=`<div class="r"><span>本单成交</span><b>收 ${fmt(got,t.toCurrency)} · 付 ${fmt(a,t.currency)}</b></div><div class="r"><span>本单汇率</span><b>1 ${p.b} = ${dr?sig(dr):"—"} ${p.q}</b></div><div class="r"><span>按成本汇率，付出值</span><b>${fmt(book,t.toCurrency)}</b></div>
        <div class="r hl"><span>这笔换汇利润（${CNAME[S.disp]}）</span><b class="${got-book<0?"neg":"pos"}">${fmt(conv(got-book,t.toCurrency,S.disp,r),S.disp,{plus:true})}</b></div>`;
   }else{
     const net=t.type==="in"?a-f:a+f;
@@ -841,7 +864,8 @@ async function submitTx(){
   readTx();const e=validTx(),el=$("#tx-err");if(e){el.textContent=e;el.hidden=false;return}
   const t=F,after=t._after,out={date:t.date,type:t.type,client:t.client,currency:t.currency,amount:num(t.amount),fee:num(t.fee),rates:{CNY:num(t.rates.CNY),KZT:num(t.rates.KZT)},
     category:t.category||"",status:t.status||"done",ref:t.ref||"",note:t.note||"",createdAt:t.createdAt||Date.now(),updatedAt:Date.now()};
-  if(t.type==="fx"){out.toCurrency=t.toCurrency;out.toAmount=num(t.toAmount)}
+  if(t.type==="fx"){out.toCurrency=t.toCurrency;out.toAmount=num(t.toAmount);const p=dealPair(t.toCurrency,t.currency),a=num(t.amount),g=num(t.toAmount);
+    out.dealRate=g&&a?+factorToDeal(t.toCurrency,t.currency,a/g).toFixed(6):num(t.dealRate);out.dealBase=p.b;out.dealQuote=p.q}
   if(t.orderId)out.orderId=t.orderId;if(t.demo)out.demo=true;if(t.id)out.id=t.id;const wasEdit=!!t.id;
   closeModal();
   try{if(out.client&&!clientByName(out.client)&&!after)await saveClient({name:out.client,contact:"",country:"",note:"",createdAt:Date.now()});
@@ -867,6 +891,45 @@ function openClient(id){
       toast("已保存客户")}catch(err){}};
   const del=$("#cl-del");if(del)del.onclick=async()=>{if(!del.classList.contains("armed")){del.classList.add("armed");del.textContent="确认删除？账目会保留";return}
     closeModal();try{await delClient(id);toast("已删除客户")}catch(err){}};
+}
+/* ---------- client picker inside the transaction form ---------- */
+function renderPicker(qs){
+  const box=$("#pk-list");if(!box)return;const q=qs.trim().toLowerCase();
+  const names=clientNames(),count=n=>[...S.txns.values()].filter(t=>t.client===n).length;
+  const hit=names.filter(n=>!q||n.toLowerCase().includes(q)||(clientByName(n)?.contact||"").toLowerCase().includes(q));
+  const exact=names.some(n=>n.toLowerCase()===q);
+  box.innerHTML=(qs.trim()&&!exact?`<button type="button" class="pk-add" data-addnew="${esc(qs.trim())}">＋ 添加新客户「${esc(qs.trim())}」</button>`:"")+
+    hit.slice(0,60).map(n=>{const r=clientByName(n);return `<button type="button" class="pk-row" data-pick="${esc(n)}"><span class="avatar sm">${esc([...n][0]||"?")}</span><span class="pk-txt"><b>${esc(n)}</b><small>${esc([r?.contact,r?.country].filter(Boolean).join(" · ")||count(n)+" 笔记录")}</small></span>${F&&F.client===n?"<i>✓</i>":""}</button>`}).join("")+
+    (!names.length&&!q?'<div class="empty-note">还没有客户。在上面输入名字，就能添加第一位客户。</div>':"")+
+    (F&&F.client?'<button type="button" class="pk-row pk-none" data-pick="">不选客户</button>':"");
+}
+function pickClient(name){
+  if(!F)return;F.client=name;$("#tx-client").value=name;const b=$("#tx-client-btn");
+  b.innerHTML=(name?esc(name):"点这里选择或添加客户")+"<span>▾</span>";b.classList.toggle("empty",!name);$("#picker").hidden=true;
+}
+
+/* ---------- client profile: everything for one client in one place ---------- */
+function clientOrders(name){const r=clientByName(name),ph=(r?.contact||"").replace(/\s/g,"");
+  return [...S.orders.values()].filter(o=>o.name===name||(ph&&(o.phone||"").replace(/\s/g,"")===ph)).sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""))}
+function openClientDetail(name){
+  const rec=clientByName(name),D=S.disp,tx=allTx().filter(t=>t.client===name),T=totals(tx,D),ords=clientOrders(name);
+  $("#modal").innerHTML=`<div class="scrim" id="scrim"><div class="sheet wide">
+    <h3><span class="cdhead"><span class="avatar">${esc([...name][0]||"?")}</span><span><b>${esc(name)}</b><small>${esc([rec?.contact,rec?.country,rec?.note].filter(Boolean).join(" · ")||"客户档案")}</small></span></span><button class="btn ghost" type="button" data-close aria-label="关闭">✕</button></h3>
+    <div class="cdstats">
+      <div><small>进账</small><b class="pos">${fmt(T.inc,D)}</b></div><div><small>出账</small><b class="neg">${fmt(T.exp,D)}</b></div>
+      <div><small>利润（含换汇）</small><b>${fmt(T.profit,D)}</b></div><div><small>待收</small><b>${fmt(T.recv,D)}</b></div>
+      <div><small>账目 / 订单</small><b>${tx.length} / ${ords.length}</b></div>
+    </div>
+    <div class="ctrls"><button class="btn gold" type="button" id="cd-new">＋ 为TA记一笔</button>${rec?'<button class="btn" type="button" id="cd-edit">编辑资料</button>':'<button class="btn" type="button" id="cd-save">存为客户</button>'}${rec?.contact?`<button class="btn ghost" type="button" id="cd-copy">复制 ${esc(rec.contact)}</button>`:""}</div>
+    <div class="cdsec"><h4>账目 <span>${tx.length} 笔 · 全部期间</span></h4><div class="rows">${tx.length?tx.map(rowHTML).join(""):'<div class="empty-note">还没有账目。点「为TA记一笔」添加。</div>'}</div></div>
+    <div class="cdsec"><h4>网站订单 <span>${ords.length} 个</span></h4>${ords.length?`<div class="cdorders">${ords.map(o=>`<div class="cdord"><span class="chip ost-${esc(o.status)}">${ORDER_ST[o.status]||esc(o.status)}</span><span class="num">#${esc(o.code)}</span><span class="num">${fmt(num(o.amount),o.from_cur)} → ${fmt(num(o.to_amount),o.to_cur)}</span><span class="otime">${esc(fmtTime(o.created_at))}</span></div>`).join("")}</div>`:'<div class="empty-note">这位客户还没有在网站上下过单（按名字或电话匹配）。</div>'}</div>
+  </div></div>`;
+  const m=$("#modal");
+  m.querySelectorAll(".row[data-id]").forEach(r=>r.onclick=()=>openTx(r.dataset.id));
+  $("#cd-new").onclick=()=>openTx(null,{client:name});
+  const ed=$("#cd-edit");if(ed)ed.onclick=()=>openClient(rec.id);
+  const sv=$("#cd-save");if(sv)sv.onclick=async()=>{await saveClient({name,contact:"",country:"",note:"",createdAt:Date.now()}).catch(()=>{});openClientDetail(name)};
+  const cp=$("#cd-copy");if(cp)cp.onclick=()=>copyText(rec.contact,cp);
 }
 function closeModal(){const m=$("#modal");if(m)m.innerHTML="";F=null}
 
@@ -935,6 +998,9 @@ function bindView(){
     m.querySelectorAll("[data-of]").forEach(b=>b.onclick=()=>{S.of=b.dataset.of;render()});
     m.querySelectorAll("[data-oact]").forEach(b=>b.onclick=()=>orderAction(b.closest("[data-oid]").dataset.oid,b.dataset.oact,b));
     m.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy,b));
+    m.querySelectorAll("[data-orate]").forEach(inp=>inp.oninput=()=>{const id=inp.dataset.orate;clearTimeout(noteTimers["r"+id]);
+      noteTimers["r"+id]=setTimeout(()=>{const o=S.orders.get(id),v=num(inp.value);if(!o||!(v>0))return;const f=dealToFactor(o.from_cur,o.to_cur,v),to=+(num(o.amount)*f).toFixed(2);
+        if(Math.abs(f-num(o.rate))<1e-12)return;updateOrder(id,{rate:+f.toFixed(10),to_amount:to}).then(()=>toast(`本单汇率已改，客户得 ${fmt(to,o.to_cur)}`)).catch(()=>{})},800)});
     m.querySelectorAll("[data-anote]").forEach(inp=>inp.oninput=()=>{const id=inp.dataset.anote;clearTimeout(noteTimers[id]);
       noteTimers[id]=setTimeout(()=>{const o=S.orders.get(id);if(o&&o.admin_note!==inp.value){o.admin_note=inp.value;track(q(sb.from("orders").update({admin_note:inp.value,updated_at:stamp()}).eq("id",id))).catch(()=>{})}},700)});
   }
@@ -949,7 +1015,7 @@ function bindView(){
   if(S.view==="clients"){
     const nc=$("#newClient");if(nc)nc.onclick=()=>openClient();
     m.querySelectorAll("[data-editclient]").forEach(b=>b.onclick=e=>{e.stopPropagation();openClient(b.dataset.editclient)});
-    m.querySelectorAll("[data-client]").forEach(c=>{const go=()=>{S.lf={q:"",type:"",cur:"",client:c.dataset.client,cat:"",status:""};setView("ledger")};c.onclick=go;c.onkeydown=e=>{if(e.key==="Enter")go()}});
+    m.querySelectorAll("[data-client]").forEach(c=>{const go=()=>openClientDetail(c.dataset.client);c.onclick=go;c.onkeydown=e=>{if(e.key==="Enter")go()}});
   }
   if(S.view==="rates"&&$("#r-cny")){
     ["r-cny","r-kzt","cv-amt","cv-from"].forEach(id=>{$("#"+id).oninput=updateRatesView});updateRatesView();
@@ -968,12 +1034,15 @@ document.addEventListener("click",e=>{
   if(e.target.closest("[data-close]")||e.target.id==="scrim"){closeModal();return}
   if(!F)return;
   const ty=e.target.closest(".typeseg button");if(ty){readTx();F.type=ty.dataset.t;F.category=CATS[F.type][0];if(F.type==="fx"&&F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);drawTx();return}
-  const cu=e.target.closest("#tx-cur button");if(cu){readTx();F.currency=cu.dataset.c;if(F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);drawTx();return}
-  const tc=e.target.closest("#tx-tocur button");if(tc&&!tc.disabled){readTx();F.toCurrency=tc.dataset.c;drawTx();return}
+  const cu=e.target.closest("#tx-cur button");if(cu&&!cu.disabled){readTx();F.currency=cu.dataset.c;if(F.toCurrency===F.currency)F.toCurrency=CURS.find(c=>c!==F.currency);if(F.type==="fx"){F.dealRate="";F.amount=""}drawTx();if(F.type==="fx")fxAuto("tx-deal"),calcTx();return}
+  const tc=e.target.closest("#tx-tocur button");if(tc){readTx();F.toCurrency=tc.dataset.c;if(F.currency===F.toCurrency)F.currency=CURS.find(c=>c!==F.toCurrency);F.dealRate="";F.amount="";drawTx();fxAuto("tx-deal");calcTx();return}
+  if(e.target.closest("#tx-client-btn")){const p=$("#picker");p.hidden=!p.hidden;if(!p.hidden){renderPicker("");$("#pk-q").value="";$("#pk-q").focus()}return}
+  const pk=e.target.closest("[data-pick]");if(pk){pickClient(pk.dataset.pick);return}
+  const an=e.target.closest("[data-addnew]");if(an){const name=an.dataset.addnew.trim();if(name){saveClient({name,contact:"",country:"",note:"",createdAt:Date.now()}).catch(()=>{});pickClient(name);toast("已添加新客户："+name)}return}
   if(e.target.id==="tx-del"){const b=e.target;if(!b.classList.contains("armed")){b.classList.add("armed");b.textContent="再点一次确认删除";return}const id=F.id;closeModal();delTxn(id).then(()=>toast("已删除")).catch(()=>{});return}
   if(e.target.id==="tx-dup"){readTx();const c={...F};delete c.id;delete c.demo;delete c.orderId;c.date=today();c.createdAt=Date.now();c._after=null;F=c;drawTx();toast("已复制，修改后保存");return}
 });
-document.addEventListener("input",e=>{if(F&&e.target.closest("#txForm"))calcTx()});
+document.addEventListener("input",e=>{if(!F||!e.target.closest("#txForm"))return;if(e.target.id==="pk-q"){renderPicker(e.target.value);return}fxAuto(e.target.id);calcTx()});
 document.addEventListener("submit",e=>{if(e.target.id==="txForm"){e.preventDefault();submitTx()}});
 document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;const m=$("#modal");if(m&&m.innerHTML)closeModal();else if(S.showLogin){S.showLogin=false;S.loginErr="";render()}});
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(S.role==="owner"&&!S.preview&&VIEWS.some(v=>v[0]===h)&&h!==S.view){S.view=h;render()}});

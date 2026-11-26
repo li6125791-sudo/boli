@@ -3,8 +3,8 @@
   "short_name": "Boli",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#070b18",
-  "theme_color": "#070b18",
+  "background_color": "#ffffff",
+  "theme_color": "#0f1730",
   "icons": [
     {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"},
     {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
